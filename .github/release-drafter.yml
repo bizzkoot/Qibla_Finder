@@ -1,0 +1,50 @@
+name-template: 'Qibla Finder v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'fix'
+      - 'bugfix'
+  - title: '🔧 Improvements'
+    labels:
+      - 'improvement'
+      - 'refactor'
+  - title: '📚 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+  - title: '💥 Breaking Changes'
+    labels:
+      - 'breaking'
+template: |
+  ## 🕋 Qibla Finder v$RESOLVED_VERSION
+
+  $CHANGES
+
+  ## 📦 Installation
+
+  Download the APK from the assets below and install it on your Android device.
+
+  ## 🎯 Features
+
+  - **Accurate Qibla Direction**: Uses GPS and compass for precise direction
+  - **AR Camera Mode**: Point your camera for real-time guidance
+  - **Manual Location**: Set your location manually on the map
+  - **Compass Calibration**: Interactive calibration for accuracy
+  - **Offline Support**: Works without internet connection
+  - **Beautiful UI**: Modern Material Design 3 interface
+
+  ## 📋 Requirements
+
+  - Android 7.0 (API level 24) or higher
+  - GPS and compass sensors
+  - Camera (for AR features)
+  - Location permissions
+
+  ---
+
+  **Built with ❤️ for the Muslim community** 

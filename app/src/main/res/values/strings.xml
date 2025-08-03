@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Qibla Finder</string>
+    
+    <!-- AR Screen Strings -->
+    <string name="camera_permission_required">Camera permission is required for AR functionality</string>
+    <string name="arcore_not_supported">ARCore is not supported on this device</string>
+    <string name="ar_session_error">Failed to initialize AR session</string>
+    <string name="back">Back</string>
+    <string name="calibrate">Calibrate</string>
+    <string name="loading_ar">Loading AR experience...</string>
+    <string name="ar_error">AR Error</string>
+    <string name="touch_to_place">Touch to place Qibla direction arrow</string>
+</resources>

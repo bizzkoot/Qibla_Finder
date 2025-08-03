@@ -84,7 +84,7 @@ class SunCalibrationViewModel(
                 
                 // Get the current device heading
                 val orientationState = sensorRepository.orientationState.first()
-                                    if (orientationState !is com.bizzkoot.qiblafinder.model.OrientationState.Available) {
+                if (orientationState !is com.bizzkoot.qiblafinder.model.OrientationState.Available) {
                     _uiState.value = SunCalibrationUiState.Error("Device orientation not available")
                     return@launch
                 }

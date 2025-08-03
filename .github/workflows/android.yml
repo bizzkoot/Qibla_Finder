@@ -34,6 +34,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
           
+    - name: Create keystore from secrets
+      run: |
+        echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 -d > app/qiblafinder-release-key.jks
+        
     - name: Build with Gradle
       run: ./gradlew build
       
@@ -48,10 +52,6 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
-        
-    - name: Create keystore from secrets
-      run: |
-        echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 -d > app/qiblafinder-release-key.jks
         
     - name: Build release APK
       run: ./gradlew assembleRelease

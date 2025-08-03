@@ -133,22 +133,14 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         
-      - name: Update Release Draft
-        id: release
-        uses: release-drafter/release-drafter@v6
+      - name: Create Release with APK
+        uses: softprops/action-gh-release@v1
         with:
+          files: app/build/outputs/apk/release/app-release.apk
           name: Release v${{ steps.version_bump.outputs.new_version != '' && steps.version_bump.outputs.new_version || steps.current_version.outputs.version }}
           tag: v${{ steps.version_bump.outputs.new_version != '' && steps.version_bump.outputs.new_version || steps.current_version.outputs.version }}
-          publish: true
+          draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Upload APK to Release
-        uses: actions/upload-release-asset@v1
-        with:
-          url: ${{ steps.release.outputs.upload_url }}
-          file: app/build/outputs/apk/release/app-release.apk
-          asset_name: QiblaFinder-v${{ steps.version_bump.outputs.new_version != '' && steps.version_bump.outputs.new_version || steps.current_version.outputs.version }}.apk
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

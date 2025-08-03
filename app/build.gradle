@@ -23,9 +23,9 @@ android {
     signingConfigs {
         release {
             storeFile file("qiblafinder-release-key.jks")
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "your_keystore_password"
-            keyAlias System.getenv("KEY_ALIAS") ?: "qiblafinder-key"
-            keyPassword System.getenv("KEY_PASSWORD") ?: "your_key_password"
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+            keyAlias System.getenv("KEY_ALIAS")
+            keyPassword System.getenv("KEY_PASSWORD")
         }
     }
     

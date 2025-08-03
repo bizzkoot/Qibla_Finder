@@ -40,6 +40,10 @@ jobs:
         
     - name: Build with Gradle
       run: ./gradlew build
+      env:
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       
     - name: Run tests
       run: ./gradlew test
@@ -55,10 +59,6 @@ jobs:
         
     - name: Build release APK
       run: ./gradlew assembleRelease
-      env:
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         
     - name: Upload signed release APK artifact
       uses: actions/upload-artifact@v4

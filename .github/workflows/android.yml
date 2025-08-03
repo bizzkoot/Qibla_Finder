@@ -49,6 +49,10 @@ jobs:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
         
+    - name: Create keystore from secrets
+      run: |
+        echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 -d > app/qiblafinder-release-key.jks
+        
     - name: Build release APK
       run: ./gradlew assembleRelease
       env:
@@ -56,20 +60,11 @@ jobs:
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         
-    - name: Sign Release APK
-      uses: r0adkll/sign-android-release@v1
-      with:
-        releaseDirectory: app/build/outputs/apk/release/
-        signingKeyBase64: ${{ secrets.SIGNING_KEY_BASE64 }}
-        alias: ${{ secrets.KEY_ALIAS }}
-        keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-        keyPassword: ${{ secrets.KEY_PASSWORD }}
-        
     - name: Upload signed release APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-release-signed
-        path: app/build/outputs/apk/release/app-release-signed.apk
+        path: app/build/outputs/apk/release/app-release.apk
 
   test:
     runs-on: ubuntu-latest

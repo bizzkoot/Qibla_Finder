@@ -22,13 +22,95 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Get version from build.gradle
-        id: version
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Get PR labels
+        id: pr_labels
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            LABELS=$(echo '${{ toJSON(github.event.pull_request.labels.*.name) }}' | jq -r '.[]' | tr '\n' ',' | sed 's/,$//')
+            echo "labels=$LABELS" >> $GITHUB_OUTPUT
+          else
+            echo "labels=" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Get current version
+        id: current_version
         run: |
           VERSION=$(grep "versionName" app/build.gradle | sed 's/.*versionName "\(.*\)"/\1/')
+          VERSION_CODE=$(grep "versionCode" app/build.gradle | sed 's/.*versionCode \([0-9]*\)/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          
+      - name: Calculate version bump
+        id: version_bump
+        run: |
+          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+          LABELS="${{ steps.pr_labels.outputs.labels }}"
+          
+          # Parse current version
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          
+          # Determine bump type based on labels
+          if echo "$LABELS" | grep -q "breaking\|breaking-change"; then
+            NEW_MAJOR=$((MAJOR + 1))
+            NEW_MINOR=0
+            NEW_PATCH=0
+            BUMP_TYPE="major"
+          elif echo "$LABELS" | grep -q "feature\|enhancement"; then
+            NEW_MAJOR=$MAJOR
+            NEW_MINOR=$((MINOR + 1))
+            NEW_PATCH=0
+            BUMP_TYPE="minor"
+          elif echo "$LABELS" | grep -q "fix\|bugfix"; then
+            NEW_MAJOR=$MAJOR
+            NEW_MINOR=$MINOR
+            NEW_PATCH=$((PATCH + 1))
+            BUMP_TYPE="patch"
+          else
+            # No version bump for other labels
+            NEW_MAJOR=$MAJOR
+            NEW_MINOR=$MINOR
+            NEW_PATCH=$PATCH
+            BUMP_TYPE="none"
+          fi
+          
+          NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+          NEW_VERSION_CODE=$(({{ steps.current_version.outputs.version_code }} + 1))
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version_code=$NEW_VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          
+      - name: Update build.gradle with new version
+        if: steps.version_bump.outputs.bump_type != 'none'
+        run: |
+          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+          NEW_VERSION="${{ steps.version_bump.outputs.new_version }}"
+          CURRENT_VERSION_CODE="${{ steps.current_version.outputs.version_code }}"
+          NEW_VERSION_CODE="${{ steps.version_bump.outputs.new_version_code }}"
+          
+          # Update versionName
+          sed -i "s/versionName \"$CURRENT_VERSION\"/versionName \"$NEW_VERSION\"/" app/build.gradle
+          
+          # Update versionCode
+          sed -i "s/versionCode $CURRENT_VERSION_CODE/versionCode $NEW_VERSION_CODE/" app/build.gradle
+          
+          echo "Updated version from $CURRENT_VERSION to $NEW_VERSION"
+          echo "Updated versionCode from $CURRENT_VERSION_CODE to $NEW_VERSION_CODE"
+          
+      - name: Commit version bump
+        if: steps.version_bump.outputs.bump_type != 'none'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add app/build.gradle
+          git commit -m "chore: bump version to ${{ steps.version_bump.outputs.new_version }} [skip ci]"
+          git push origin main
         
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -52,12 +134,21 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         
       - name: Update Release Draft
+        id: release
         uses: release-drafter/release-drafter@v6
         with:
-          name: Release v${{ steps.version.outputs.version }}
-          tag: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version_bump.outputs.new_version != '' && steps.version_bump.outputs.new_version || steps.current_version.outputs.version }}
+          tag: v${{ steps.version_bump.outputs.new_version != '' && steps.version_bump.outputs.new_version || steps.current_version.outputs.version }}
           publish: true
           prerelease: false
-          files: app/build/outputs/apk/release/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Upload APK to Release
+        uses: actions/upload-release-asset@v1
+        with:
+          url: ${{ steps.release.outputs.upload_url }}
+          file: app/build/outputs/apk/release/app-release.apk
+          asset_name: QiblaFinder-v${{ steps.version_bump.outputs.new_version != '' && steps.version_bump.outputs.new_version || steps.current_version.outputs.version }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

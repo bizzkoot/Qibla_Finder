@@ -23,6 +23,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         
+      - name: Get version from build.gradle
+        id: version
+        run: |
+          VERSION=$(grep "versionName" app/build.gradle | sed 's/.*versionName "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+        
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -47,8 +54,8 @@ jobs:
       - name: Update Release Draft
         uses: release-drafter/release-drafter@v6
         with:
-          name: Release ${{ github.ref_name }}
-          tag: v${{ github.ref_name }}
+          name: Release v${{ steps.version.outputs.version }}
+          tag: v${{ steps.version.outputs.version }}
           publish: true
           prerelease: false
           files: app/build/outputs/apk/release/app-release.apk

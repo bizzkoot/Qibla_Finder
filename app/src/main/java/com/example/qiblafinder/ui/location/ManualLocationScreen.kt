@@ -30,7 +30,6 @@ fun ManualLocationScreen(
     timber.log.Timber.d("🎯 ManualLocationScreen - ENTERING ManualLocationScreen composable")
     timber.log.Timber.d("🎯 ManualLocationScreen - ViewModel: $viewModel")
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
     
     // Debug logging
     LaunchedEffect(Unit) {
@@ -127,6 +126,9 @@ fun ManualLocationScreen(
                     onAccuracyChanged = { accuracy ->
                         viewModel.updateAccuracy(accuracy)
                     },
+                    onTileInfoChanged = { tileCount, cacheSizeMB ->
+                        viewModel.updateTileInfo(tileCount, cacheSizeMB)
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -150,6 +152,14 @@ fun ManualLocationScreen(
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Tiles: ${uiState.tileCount}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

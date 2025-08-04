@@ -22,7 +22,46 @@ I've packed this app with features that actually work in real-world situations:
 
 ## 📱 Screenshots
 
-[Add screenshots here]
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="Screenshot/Compass with GPS.jpg" alt="Main Compass with GPS" width="200">
+        <br><strong>Main Compass</strong><br>
+        <em>Find your direction using GPS location</em>
+      </td>
+      <td align="center">
+        <img src="Screenshot/AR.jpg" alt="Augmented Reality Mode" width="200">
+        <br><strong>AR Camera Mode</strong><br>
+        <em>Point your camera for real-time guidance</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="Screenshot/Compass with Manual Location.jpg" alt="Manual Location Setting" width="200">
+        <br><strong>Manual Location</strong><br>
+        <em>Set your location when GPS is unavailable</em>
+      </td>
+      <td align="center">
+        <img src="Screenshot/Manual Location Adjustment.jpg" alt="Location Adjustment" width="200">
+        <br><strong>Location Adjustment</strong><br>
+        <em>Fine-tune your position on the map</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="Screenshot/Calibrate Compass.jpg" alt="Compass Calibration" width="200">
+        <br><strong>Compass Calibration</strong><br>
+        <em>Ensure accurate compass readings</em>
+      </td>
+      <td align="center">
+        <img src="Screenshot/Trobleshooting Guide.jpg" alt="Troubleshooting Guide" width="200">
+        <br><strong>Troubleshooting Guide</strong><br>
+        <em>Get help when you need it</em>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## 🛠️ Built With Modern Tech
 
@@ -45,6 +84,13 @@ I chose these technologies because they're reliable and fast:
 
 ### Quick Setup
 
+#### Option 1: Download Pre-built APK (Recommended)
+1. **Download the latest release**
+   - Go to [Releases](https://github.com/bizzkoot/Qibla_Finder/releases)
+   - Download the latest APK file
+   - Install directly on your Android device
+
+#### Option 2: Build from Source
 1. **Get the code**
 ```bash
 git clone https://github.com/bizzkoot/Qibla_Finder.git
@@ -129,11 +175,54 @@ I keep track of everything I'm working on in [Progress.md](Progress.md). Check i
 
 [![Android CI/CD](https://github.com/bizzkoot/Qibla_Finder/workflows/Android%20CI/CD/badge.svg)](https://github.com/bizzkoot/Qibla_Finder/actions)
 
-## 📦 Get the App
 
-The latest version is always available in the [Releases](https://github.com/bizzkoot/Qibla_Finder/releases) section. Just download the APK and install it on your phone!
 
 ## 🎯 How It Works
+
+### App Flow & Logic
+
+```mermaid
+flowchart TD
+    A[📱 App Launch] --> B{🔐 Permissions Granted?}
+    B -->|No| C[📋 Permission Screen]
+    C --> D[✅ User Grants Permissions]
+    D --> E[🧭 Main Compass Screen]
+    B -->|Yes| E
+    
+    E --> F{📍 GPS Available?}
+    F -->|Yes| G[🎯 Show Qibla Direction]
+    F -->|No| H[🗺️ Manual Location Screen]
+    H --> I[📍 User Sets Location]
+    I --> J[🔄 Return to Compass]
+    J --> G
+    
+    G --> K{🧭 Compass Status}
+    K -->|✅ Accurate| L[🎯 Display Qibla]
+    K -->|⚠️ Needs Calibration| M[🔄 Calibration Overlay]
+    K -->|❌ Interference| N[⚠️ Interference Warning]
+    
+    L --> O{🎮 User Actions}
+    O -->|📱 AR Mode| P[📷 AR Camera View]
+    O -->|☀️ Sun Calibration| Q[🌅 Sun Calibration]
+    O -->|🗺️ Manual Location| H
+    O -->|❓ Help| R[📖 Troubleshooting Guide]
+    
+    P --> S[🔄 Return to Compass]
+    Q --> S
+    R --> S
+    
+    M --> T[🔄 Calibrate Compass]
+    N --> U[🚫 Move Away from Metal]
+    T --> G
+    U --> G
+    
+    style A fill:#e1f5fe
+    style E fill:#f3e5f5
+    style G fill:#e8f5e8
+    style P fill:#fff3e0
+    style Q fill:#fff3e0
+    style R fill:#fff3e0
+```
 
 ### Finding the Right Direction
 The app uses your phone's GPS to know exactly where you are, then calculates the direction to the Kaaba in Mecca. It's like having a digital compass that always points to the right place!
@@ -160,5 +249,4 @@ The app includes a built-in troubleshooting guide that covers most common issues
 
 ---
 
-**Built with ❤️ for the Muslim community** # Test release system
-# Test automatic release
+**Built with ❤️ for the Muslim community**

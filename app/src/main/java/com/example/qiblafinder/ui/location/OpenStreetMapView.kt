@@ -21,6 +21,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -32,6 +33,7 @@ fun OpenStreetMapView(
     currentLocation: MapLocation,
     onLocationSelected: (MapLocation) -> Unit,
     onAccuracyChanged: (Int) -> Unit,
+    onTileInfoChanged: (Int, Double) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -46,6 +48,10 @@ fun OpenStreetMapView(
     var tileCache by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // --- Drag State for Continuous Loading ---
+    var isDragging by remember { mutableStateOf(false) }
+    var lastDragPosition by remember { mutableStateOf(Pair(0.0, 0.0)) }
 
     // --- Initialization ---
     LaunchedEffect(currentLocation) {
@@ -60,19 +66,38 @@ fun OpenStreetMapView(
         val accuracyMeters = getAccuracyForZoom(zoom)
         onAccuracyChanged(accuracyMeters)
 
-        // Load tiles
+        // Check memory pressure before loading
+        if (tileManager.shouldHandleMemoryPressure()) {
+            tileManager.handleMemoryPressure()
+        }
+
+        // Load tiles with priority (visible first, then buffer)
         if (!isActive) return@LaunchedEffect
         isLoading = true
         error = null
         try {
-            val newTiles = tileManager.getTilesForView(tileX, tileY, zoom, 800, 800)
-            val newCache = newTiles.associate {
-                it.toFileName() to (tileCache[it.toFileName()] ?: tileManager.getTileBitmap(it))
-            }.filterValues { it != null }.mapValues { it.value!! }
-
+            val bufferSize = tileManager.getBufferSizeBasedOnConnection()
+            val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, bufferSize)
+            
+            // Load visible tiles first using batch download (priority 1)
+            val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
+            
             if (isActive) {
-                tileCache = newCache
+                tileCache = tileCache + visibleCache
                 isLoading = false
+            }
+            
+            // Load buffer tiles in background using batch download (priority 2)
+            launch {
+                try {
+                    val bufferCache = tileManager.batchDownloadTiles(bufferTiles, batchSize = 5)
+                    
+                    if (isActive) {
+                        tileCache = tileCache + bufferCache
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "📍 Error loading buffer tiles")
+                }
             }
         } catch (e: Exception) {
             if (isActive) {
@@ -81,19 +106,68 @@ fun OpenStreetMapView(
             }
         }
     }
+    
+    // Update tile info when cache changes
+    LaunchedEffect(tileCache) {
+        onTileInfoChanged(tileCache.size, tileManager.getCacheSizeMB())
+    }
+    
+    // Continuous tile loading during drag
+    LaunchedEffect(isDragging, lastDragPosition) {
+        if (isDragging) {
+            try {
+                val (dragTileX, dragTileY) = lastDragPosition
+                val bufferSize = tileManager.getBufferSizeBasedOnConnection()
+                val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(dragTileX, dragTileY, zoom, 800, 800, bufferSize)
+                
+                // Load visible tiles first during drag using batch download
+                val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
+                
+                if (isActive) {
+                    tileCache = tileCache + visibleCache
+                }
+                
+                // Load buffer tiles in background using batch download
+                launch {
+                    try {
+                        val bufferCache = tileManager.batchDownloadTiles(bufferTiles, batchSize = 5)
+                        
+                        if (isActive) {
+                            tileCache = tileCache + bufferCache
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "📍 Error loading buffer tiles during drag")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "📍 Error loading tiles during drag")
+            }
+        }
+    }
 
     Box(
         modifier = modifier
             .background(Color(0xFFE8F5E8))
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    val tileSize = 256f
-                    tileX -= dragAmount.x / tileSize
-                    tileY -= dragAmount.y / tileSize
-                    val (newLat, newLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
-                    onLocationSelected(MapLocation(newLat, newLng))
-                }
+                detectDragGestures(
+                    onDragStart = { _ ->
+                        isDragging = true
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val tileSize = 256f
+                        tileX -= dragAmount.x / tileSize
+                        tileY -= dragAmount.y / tileSize
+                        val (newLat, newLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
+                        onLocationSelected(MapLocation(newLat, newLng))
+                        
+                        // Update drag position for continuous loading
+                        lastDragPosition = Pair(tileX, tileY)
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                    }
+                )
             }
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -167,12 +241,7 @@ fun OpenStreetMapView(
             }
         }
 
-        Card(modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                Text("Tiles: ${tileCache.size}", style = MaterialTheme.typography.bodySmall)
-                Text("Cache: ${String.format("%.1f", tileManager.getCacheSizeMB())}MB", style = MaterialTheme.typography.bodySmall)
-            }
-        }
+        // Removed Tiles/Cache card - moved to Instructions card
     }
 }
 

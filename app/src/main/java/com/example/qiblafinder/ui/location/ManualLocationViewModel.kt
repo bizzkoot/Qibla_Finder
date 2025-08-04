@@ -16,6 +16,8 @@ data class ManualLocationUiState(
     val selectedLocation: MapLocation? = null,
     val currentLocation: MapLocation? = null,
     val accuracyInMeters: Int = 0,
+    val tileCount: Int = 0,
+    val cacheSizeMB: Double = 0.0,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -78,6 +80,10 @@ class ManualLocationViewModel(
 
     fun updateAccuracy(accuracy: Int) {
         _uiState.value = _uiState.value.copy(accuracyInMeters = accuracy)
+    }
+    
+    fun updateTileInfo(tileCount: Int, cacheSizeMB: Double) {
+        _uiState.value = _uiState.value.copy(tileCount = tileCount, cacheSizeMB = cacheSizeMB)
     }
     
     fun confirmLocation(): MapLocation? {

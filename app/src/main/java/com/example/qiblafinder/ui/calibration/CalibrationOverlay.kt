@@ -25,7 +25,6 @@ import kotlin.math.sin
 @Composable
 fun CalibrationOverlay(
     isVisible: Boolean,
-    calibrationProgress: Float,
     onDismiss: () -> Unit
 ) {
     AnimatedVisibility(
@@ -81,51 +80,17 @@ fun CalibrationOverlay(
                     
                     // Animated figure-8 pattern
                     CalibrationAnimation(
-                        progress = calibrationProgress,
                         modifier = Modifier.size(120.dp)
                     )
                     
                     Spacer(modifier = Modifier.height(24.dp))
                     
-                    // Progress indicator
-                    LinearProgressIndicator(
-                        progress = calibrationProgress,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Text(
-                        text = "${(calibrationProgress * 100).toInt()}% Complete",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
                     // Action buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Skip")
-                        }
-                        
-                        Spacer(modifier = Modifier.width(16.dp))
-                        
-                        Button(
-                            onClick = onDismiss,
-                            enabled = calibrationProgress >= 1f,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Done")
-                        }
+                        Text("Dismiss")
                     }
                 }
             }
@@ -135,7 +100,6 @@ fun CalibrationOverlay(
 
 @Composable
 fun CalibrationAnimation(
-    progress: Float,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "calibration")
@@ -182,8 +146,7 @@ fun CalibrationAnimation(
         )
         
         // Draw animated dot following the path
-        val progressAngle = progress * 720f // Two full rotations for figure-8
-        val dotAngle = Math.toRadians(progressAngle.toDouble())
+        val dotAngle = Math.toRadians(rotation.toDouble())
         val dotX = centerX + (radius * sin(dotAngle) * cos(dotAngle)).toFloat()
         val dotY = centerY + (radius * sin(dotAngle) * cos(dotAngle) * cos(dotAngle)).toFloat()
         

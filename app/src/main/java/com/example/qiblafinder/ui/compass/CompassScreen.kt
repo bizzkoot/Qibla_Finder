@@ -1,6 +1,8 @@
 package com.bizzkoot.qiblafinder.ui.compass
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,7 +62,6 @@ fun CompassScreen(
     val isSunCalibrated = uiState.isSunCalibrated
     val isManualLocation = uiState.isManualLocation
     val showCalibration by viewModel.showCalibration.collectAsState()
-    val calibrationProgress by viewModel.calibrationProgress.collectAsState()
     
 
     
@@ -84,10 +85,7 @@ fun CompassScreen(
                 locationState = locationState,
                 orientationState = orientationState,
                 isSunCalibrated = isSunCalibrated,
-                isManualLocation = isManualLocation,
-                onCalibrateClick = {
-                    viewModel.startCalibration()
-                }
+                isManualLocation = isManualLocation
             )
 
             // Compass graphic
@@ -97,14 +95,14 @@ fun CompassScreen(
             ) {
                 // Check if arrows are aligned (within 5 degrees tolerance) and phone is NOT flat (reversed logic)
                 val isAligned = qiblaBearing?.let { qibla ->
-                    val deviceRotation = when (val orientationState = orientationState) {
+                    val deviceRotation = when (val oState = orientationState) {
                         is OrientationState.Initializing -> 0f
-                        is OrientationState.Available -> orientationState.trueHeading
+                        is OrientationState.Available -> oState.trueHeading
                     }
                     val difference = kotlin.math.abs(deviceRotation - qibla)
-                    val isPhoneFlat = when (val orientationState = orientationState) {
+                    val isPhoneFlat = when (val oState = orientationState) {
                         is OrientationState.Initializing -> false
-                        is OrientationState.Available -> orientationState.isPhoneFlat
+                        is OrientationState.Available -> oState.isPhoneFlat
                     }
                     (difference <= 5f || difference >= 355f) && !isPhoneFlat
                 } ?: false
@@ -116,9 +114,9 @@ fun CompassScreen(
                 )
                 
                 // Show red alert when phone IS flat (reversed logic due to axis setup)
-                when (val orientationState = orientationState) {
+                when (val oState = orientationState) {
                     is OrientationState.Available -> {
-                        if (orientationState.isPhoneFlat) {
+                        if (oState.isPhoneFlat) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
@@ -163,7 +161,7 @@ fun CompassScreen(
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
-                                            text = "Current tilt: ${orientationState.phoneTiltAngle.toInt()}°",
+                                            text = "Current tilt: ${oState.phoneTiltAngle.toInt()}°",
                                             color = Color.White.copy(alpha = 0.8f),
                                             fontSize = 14.sp
                                         )
@@ -176,13 +174,13 @@ fun CompassScreen(
                 }
                 
                 // Display current heading and instructions
-                when (val orientationState = orientationState) {
+                when (val oState = orientationState) {
                     is OrientationState.Available -> {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Heading: ${orientationState.trueHeading.toInt()}°",
+                                text = "Heading: ${oState.trueHeading.toInt()}°",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(16.dp)
@@ -303,10 +301,7 @@ fun CompassScreen(
         // Calibration overlay
         CalibrationOverlay(
             isVisible = showCalibration,
-            calibrationProgress = calibrationProgress,
-            onDismiss = {
-                viewModel.stopCalibration()
-            }
+            onDismiss = { viewModel.stopCalibration() }
         )
     }
 }
@@ -316,8 +311,7 @@ fun StatusBar(
     locationState: LocationState,
     orientationState: OrientationState,
     isSunCalibrated: Boolean = false,
-    isManualLocation: Boolean = false,
-    onCalibrateClick: (() -> Unit)? = null
+    isManualLocation: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -366,27 +360,36 @@ fun CompassGraphic(
     qiblaBearing: Float?,
     isAligned: Boolean
 ) {
-    val deviceRotation = when (orientationState) {
-        is OrientationState.Initializing -> 0f
-        is OrientationState.Available -> orientationState.trueHeading
-    }
-    
-    // Debug logging
-    LaunchedEffect(deviceRotation) {
-        Timber.d("🎨 CompassGraphic - Device rotation updated: $deviceRotation°")
+    val animatableRotation = remember { Animatable(0f) }
+
+    val previousAngle = remember { mutableStateOf(0f) }
+
+    LaunchedEffect(orientationState) {
+        if (orientationState is OrientationState.Available) {
+            val currentAngle = orientationState.trueHeading
+            val previous = previousAngle.value
+            
+            // Determine the number of full rotations (laps)
+            val laps = (previous / 360).toInt()
+            var targetRotation = laps * 360 + currentAngle
+
+            // Find the shortest path by checking the adjacent laps
+            val diff = targetRotation - previous
+            if (diff > 180) {
+                targetRotation -= 360
+            } else if (diff < -180) {
+                targetRotation += 360
+            }
+
+            previousAngle.value = targetRotation
+            animatableRotation.animateTo(
+                targetValue = targetRotation,
+                animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.LinearEasing)
+            )
+        }
     }
     
     // Additional debug logging for orientation state
-    LaunchedEffect(orientationState) {
-        when (orientationState) {
-            is OrientationState.Available -> {
-                Timber.d("🎨 CompassGraphic - Orientation state: heading=${orientationState.trueHeading}°, status=${orientationState.compassStatus}")
-            }
-            else -> {
-                Timber.d("🎨 CompassGraphic - Orientation state: $orientationState")
-            }
-        }
-    }
 
     Box(
         modifier = Modifier.size(300.dp),
@@ -395,7 +398,7 @@ fun CompassGraphic(
         Canvas(
             modifier = Modifier.size(300.dp)
         ) {
-            Timber.d("🎨 Canvas drawing - Device rotation: $deviceRotation°")
+            Timber.d("🎨 Canvas drawing - Device rotation: ${animatableRotation.value}°")
             val centerX = size.width / 2
             val centerY = size.height / 2
             val radius = size.minDimension / 2 * 0.8f
@@ -417,7 +420,7 @@ fun CompassGraphic(
             directions.forEachIndexed { index, direction ->
                 // Convert compass coordinates (0° = North) to screen coordinates (0° = right, 90° = down)
                 // We need to subtract 90° to align North with the top of the screen
-                val screenAngle = directionAngles[index] - deviceRotation - 90f
+                val screenAngle = directionAngles[index] - animatableRotation.value - 90f
                 val angleRad = Math.toRadians(screenAngle.toDouble())
                 val textX = centerX + (radius * 0.7f * Math.cos(angleRad)).toFloat()
                 val textY = centerY + (radius * 0.7f * Math.sin(angleRad)).toFloat()
@@ -477,7 +480,7 @@ fun CompassGraphic(
             // The needle should point to the direction the device is facing
             val needleLength = radius * 0.9f
             // Convert compass coordinates to screen coordinates
-            val screenAngle = deviceRotation - 90f
+            val screenAngle = animatableRotation.value - 90f
             val needleAngleRad = Math.toRadians(screenAngle.toDouble())
             
             // Draw main needle line

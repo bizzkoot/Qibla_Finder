@@ -313,6 +313,32 @@ This document tracks the development progress of the Qibla Finder app. Each task
     - [✅] Confirm directional accuracy matches compass screen
     - [✅] **CONFIRMATION**: AR works reliably with simplified, focused UI
 
+## Phase 11: Compass Core Refactoring ✅ COMPLETED
+
+*   [x] **Implement Compass Core Refactor Plan**
+    - [x] **Details**: Executed the full refactoring plan outlined in [COMPASS_CORE_REFACTOR_V2.md](COMPASS_CORE_REFACTOR_V2.md).
+    - [x] **Action**: Switched from manual sensor fusion to `Sensor.TYPE_ROTATION_VECTOR`.
+    - [x] **Action**: Simplified `SensorRepository` by removing complex figure-8 detection logic.
+    - [x] **Action**: Refactored `CompassViewModel` to handle a new hybrid (automatic and manual) calibration flow.
+    - [x] **Action**: Updated `CompassScreen` and `CalibrationOverlay` to use the new, simplified state.
+    - [x] **Result**: Fixed the non-functional "Calibrate" button and improved overall compass accuracy and stability.
+
+## Phase 12: Post-Refactor Bug Fixes ✅ COMPLETED
+
+*   [x] **Fix App Sticking on "Initializing"**
+    - [x] **Problem**: After the refactor, the app was stuck on the "Initializing compass..." message.
+    - [x] **Root Cause**: The `trySend()` call was missing from the `callbackFlow` in `SensorRepository`, so new orientation states were never emitted to the UI.
+    - [x] **Action**: Moved the orientation calculation logic directly into the `onSensorChanged` listener and re-introduced the `trySend(newState)` call.
+    - [x] **Result**: The compass now initializes correctly and displays the heading.
+*   [x] **Fix Calibration Overlay Behavior**
+    - [x] **Problem**: "Calibrate" button showed the overlay, but it disappeared immediately if the sensor status was `OK`.
+    - [x] **Action**: Introduced an `isManualCalibrationInProgress` state in `CompassViewModel` to differentiate between user-initiated and sensor-prompted calibration.
+    - [x] **Action**: The automatic observer now respects this state and no longer closes a manual session.
+*   [ ] **Fix Compass Needle Animation**
+    - [ ] **Problem**: The compass needle performs a full 360-degree rotation when crossing the 0/360 boundary.
+    - [ ] **Status**: Multiple attempts to fix the animation logic have failed. The issue persists.
+    - [ ] **Next Step**: Requires a deeper investigation into Jetpack Compose animation handling for circular values.
+
 ## Testing Protocol
 
 ### **ADB Logcat Monitoring:**

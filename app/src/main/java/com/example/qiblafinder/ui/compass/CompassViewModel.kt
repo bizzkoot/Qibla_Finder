@@ -37,6 +37,8 @@ class CompassViewModel(
 
     private val manualLocationOverride = MutableStateFlow<Location?>(null)
 
+    private val isManualCalibrationInProgress = MutableStateFlow(false)
+
     init {
         // Apply any existing calibration offset
         sunCalibrationViewModel?.let { vm ->
@@ -91,6 +93,20 @@ class CompassViewModel(
                 }
             }
         }
+
+        // Observe orientation state for automatic calibration
+        viewModelScope.launch {
+            sensorRepository.orientationState.collect { state ->
+                if (state is OrientationState.Available) {
+                    if (state.compassStatus == CompassStatus.NEEDS_CALIBRATION) {
+                        _showCalibration.value = true
+                    } else if (state.compassStatus == CompassStatus.OK && !isManualCalibrationInProgress.value) {
+                        // Only hide automatically if not in a manual session
+                        _showCalibration.value = false
+                    }
+                }
+            }
+        }
     }
 
     fun setManualLocation(mapLocation: MapLocation) {
@@ -139,11 +155,13 @@ class CompassViewModel(
     }
     
     fun startCalibration() {
-        sensorRepository.startCalibration()
+        isManualCalibrationInProgress.value = true
+        _showCalibration.value = true
     }
     
     fun stopCalibration() {
-        sensorRepository.stopCalibration()
+        isManualCalibrationInProgress.value = false
+        _showCalibration.value = false
     }
     
 
@@ -151,6 +169,4 @@ class CompassViewModel(
     private val _showCalibration = MutableStateFlow(false)
     val showCalibration: StateFlow<Boolean> = _showCalibration
     
-    private val _calibrationProgress = MutableStateFlow(0f)
-    val calibrationProgress: StateFlow<Float> = _calibrationProgress
 }

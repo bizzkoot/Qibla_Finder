@@ -1,6 +1,7 @@
 package com.bizzkoot.qiblafinder
 
 import android.app.Application
+import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
 import timber.log.Timber
 
 class QiblaFinderApplication : Application() {
@@ -12,5 +13,8 @@ class QiblaFinderApplication : Application() {
         if (isDebuggable) {
             Timber.plant(Timber.DebugTree())
         }
+
+        // Initialize device capabilities detector
+        DeviceCapabilitiesDetector.initialize(this)
     }
 }

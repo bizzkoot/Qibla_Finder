@@ -20,36 +20,49 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withTimeoutOrNull
-
-data class TileCoordinate(
-    val x: Int,
-    val y: Int,
-    val zoom: Int
-) {
-    fun toFileName(): String = "tile_${zoom}_${x}_${y}.png"
-}
+import java.net.UnknownHostException
 
 class OpenStreetMapTileManager(private val context: Context) {
-    
+
     private val cacheDir = File(context.cacheDir, "map_tiles")
     private val maxCacheSize = 100 * 1024 * 1024 // 100MB max cache
-    
+
+    // Map type specific cache directories
+    private val streetCacheDir = File(cacheDir, "street")
+    private val satelliteCacheDir = File(cacheDir, "satellite")
+
+    // Tile providers
+    private val tileProviders = mapOf(
+        MapType.STREET to OpenStreetMapUrlProvider(),
+        MapType.SATELLITE to EsriSatelliteUrlProvider()
+    )
+
     // Performance monitoring
     private var cacheHits = 0
     private var cacheMisses = 0
     private val tileLoadTimes = mutableMapOf<String, Long>()
-    
+
     init {
-        if (!cacheDir.exists()) {
-            cacheDir.mkdirs()
-        }
+        if (!cacheDir.exists()) cacheDir.mkdirs()
+        if (!streetCacheDir.exists()) streetCacheDir.mkdirs()
+        if (!satelliteCacheDir.exists()) satelliteCacheDir.mkdirs()
         Timber.d("📍 OpenStreetMapTileManager - Initialized with cache dir: ${cacheDir.absolutePath}")
     }
-    
+
+    /**
+     * Get cache directory for specific map type
+     */
+    private fun getCacheDir(mapType: MapType): File {
+        return when (mapType) {
+            MapType.STREET -> streetCacheDir
+            MapType.SATELLITE -> satelliteCacheDir
+        }
+    }
+
     /**
      * Convert latitude/longitude to tile coordinates
      */
-    fun latLngToTile(lat: Double, lng: Double, zoom: Int): TileCoordinate {
+    fun latLngToTile(lat: Double, lng: Double, zoom: Int, mapType: MapType): TileCoordinate {
         val n = 2.0.pow(zoom)
         val xtile = floor((lng + 180) / 360 * n)
         val latRad = Math.toRadians(lat)
@@ -57,9 +70,9 @@ class OpenStreetMapTileManager(private val context: Context) {
         val cosLat = Math.cos(latRad)
         val logTerm = Math.log(tanLat + 1.0 / cosLat)
         val ytile = floor((1.0 - logTerm / Math.PI) * n / 2.0)
-        return TileCoordinate(xtile.toInt(), ytile.toInt(), zoom)
+        return TileCoordinate(xtile.toInt(), ytile.toInt(), zoom, mapType)
     }
-    
+
     /**
      * Convert tile coordinates to latitude/longitude bounds
      */
@@ -102,7 +115,7 @@ class OpenStreetMapTileManager(private val context: Context) {
         val metersPerPixel = earthCircumference * Math.cos(Math.toRadians(0.0)) / (256 * 2.0.pow(zoom))
         return (meters / metersPerPixel).toFloat()
     }
-    
+
     /**
      * Get tile bitmap - from cache if available, otherwise download
      */
@@ -114,11 +127,11 @@ class OpenStreetMapTileManager(private val context: Context) {
             if (cachedBitmap != null) {
                 cacheHits++
                 val loadTime = System.currentTimeMillis() - startTime
-                tileLoadTimes[tile.toFileName()] = loadTime
+                tileLoadTimes[tile.toCacheKey()] = loadTime
                 Timber.d("📍 Tile loaded from cache in ${loadTime}ms: ${tile.toFileName()}")
                 return@withContext cachedBitmap
             }
-            
+
             cacheMisses++
             // Download tile
             val downloadedBitmap = downloadTile(tile)
@@ -126,11 +139,11 @@ class OpenStreetMapTileManager(private val context: Context) {
                 // Cache the downloaded tile
                 cacheTile(tile, downloadedBitmap)
                 val loadTime = System.currentTimeMillis() - startTime
-                tileLoadTimes[tile.toFileName()] = loadTime
+                tileLoadTimes[tile.toCacheKey()] = loadTime
                 Timber.d("📍 Tile downloaded and cached in ${loadTime}ms: ${tile.toFileName()}")
                 return@withContext downloadedBitmap
             }
-            
+
             Timber.e("📍 Failed to get tile: ${tile.toFileName()}")
             return@withContext null
         } catch (e: Exception) {
@@ -138,12 +151,12 @@ class OpenStreetMapTileManager(private val context: Context) {
             return@withContext null
         }
     }
-    
+
     /**
      * Get cached tile if available
      */
     private fun getCachedTile(tile: TileCoordinate): Bitmap? {
-        val file = File(cacheDir, tile.toFileName())
+        val file = File(getCacheDir(tile.mapType), tile.toFileName())
         return if (file.exists()) {
             try {
                 FileInputStream(file).use { stream ->
@@ -155,36 +168,49 @@ class OpenStreetMapTileManager(private val context: Context) {
             }
         } else null
     }
-    
+
     /**
-     * Download tile from OpenStreetMap with retry logic
+     * Download tile from provider with adaptive timeout
      */
     private suspend fun downloadTile(tile: TileCoordinate): Bitmap? = withContext(Dispatchers.IO) {
         downloadTileWithAdaptiveTimeout(tile)
     }
-    
+
     /**
      * Download tile with retry logic and exponential backoff
      */
     private suspend fun downloadTileWithRetry(tile: TileCoordinate, maxRetries: Int = 3): Bitmap? {
+        val provider = tileProviders[tile.mapType] ?: return null
+
         for (attempt in 0 until maxRetries) {
             try {
-                val url = URL("https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png")
+                val url = URL(provider.getTileUrl(tile))
                 val connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 10000
                 connection.readTimeout = 10000
                 connection.setRequestProperty("User-Agent", "QiblaFinder/1.0")
-                
-                if (connection.responseCode == 200) {
-                    val inputStream = connection.inputStream
-                    val bitmap = BitmapFactory.decodeStream(inputStream)
-                    inputStream.close()
-                    connection.disconnect()
-                    return bitmap
-                } else {
-                    Timber.e("📍 HTTP ${connection.responseCode} for tile: ${tile.toFileName()}")
-                    connection.disconnect()
+
+                when (connection.responseCode) {
+                    HttpURLConnection.HTTP_OK -> {
+                        val inputStream = connection.inputStream
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        inputStream.close()
+                        connection.disconnect()
+                        return bitmap
+                    }
+                    HttpURLConnection.HTTP_FORBIDDEN, 429 -> { // 429 is Too Many Requests
+                        // Rate limited or forbidden - stop trying for this tile
+                        Timber.w("📍 Tile provider rate limited or access forbidden: ${tile.toFileName()}")
+                        return null
+                    }
+                    else -> {
+                        Timber.e("📍 HTTP ${connection.responseCode} for tile: ${tile.toFileName()}")
+                        connection.disconnect()
+                    }
                 }
+            } catch (e: UnknownHostException) {
+                Timber.e(e, "📍 Unknown host for tile (attempt ${attempt + 1}): ${tile.toFileName()}. Check internet connection.")
+                return null // No point retrying if host is unknown
             } catch (e: Exception) {
                 Timber.e(e, "📍 Error downloading tile (attempt ${attempt + 1}): ${tile.toFileName()}")
                 if (attempt == maxRetries - 1) {
@@ -196,7 +222,7 @@ class OpenStreetMapTileManager(private val context: Context) {
         }
         return null
     }
-    
+
     /**
      * Get compression quality based on zoom level
      */
@@ -214,10 +240,10 @@ class OpenStreetMapTileManager(private val context: Context) {
      */
     private fun cacheTile(tile: TileCoordinate, bitmap: Bitmap) {
         try {
-            val file = File(cacheDir, tile.toFileName())
+            val file = File(getCacheDir(tile.mapType), tile.toFileName())
             val deviceCapabilities = DeviceCapabilitiesDetector.getDeviceCapabilities(context)
             val compressionQuality = CompressionUtils.getCompressionQuality(tile.zoom, deviceCapabilities)
-            
+
             FileOutputStream(file).use { stream ->
                 val success = CompressionUtils.compressBitmap(bitmap, compressionQuality, stream)
                 if (success) {
@@ -232,55 +258,60 @@ class OpenStreetMapTileManager(private val context: Context) {
             Timber.e(e, "📍 Error caching tile: ${tile.toFileName()}")
         }
     }
-    
+
     /**
      * Manage cache size by removing old tiles if needed
      */
     private fun manageCacheSize() {
         try {
-            val cacheFiles = cacheDir.listFiles() ?: return
-            val totalSize = cacheFiles.sumOf { it.length() }
-            
-            if (totalSize > maxCacheSize) {
-                // Sort by modification time (oldest first)
-                val sortedFiles = cacheFiles.sortedBy { it.lastModified() }
-                
-                // Remove oldest files until we're under the limit
-                var currentSize = totalSize
-                for (file in sortedFiles) {
-                    if (currentSize <= maxCacheSize) break
-                    currentSize -= file.length()
-                    file.delete()
-                    Timber.d("📍 Removed old cache file: ${file.name}")
+            // Manage cache size per map type
+            MapType.values().forEach { mapType ->
+                val typeCacheDir = getCacheDir(mapType)
+                val cacheFiles = typeCacheDir.listFiles() ?: return@forEach
+                val totalSize = cacheFiles.sumOf { it.length() }
+                val maxTypeCacheSize = maxCacheSize / MapType.values().size // Split cache between map types
+
+                if (totalSize > maxTypeCacheSize) {
+                    val sortedFiles = cacheFiles.sortedBy { it.lastModified() }
+                    var currentSize = totalSize
+
+                    for (file in sortedFiles) {
+                        if (currentSize <= maxTypeCacheSize) break
+                        currentSize -= file.length()
+                        file.delete()
+                        Timber.d("📍 Removed old ${mapType.displayName} cache file: ${file.name}")
+                    }
                 }
             }
-            
-            // Time-based eviction: remove tiles not accessed in last 30 minutes
+
             evictOldTiles()
         } catch (e: Exception) {
             Timber.e(e, "📍 Error managing cache size")
         }
     }
-    
+
     /**
-     * Remove tiles not accessed in the last 30 minutes
+     * Remove tiles not accessed in the last 30 minutes from all caches
      */
     private fun evictOldTiles() {
         try {
-            val cacheFiles = cacheDir.listFiles() ?: return
-            val cutoffTime = System.currentTimeMillis() - (30 * 60 * 1000) // 30 minutes
-            
-            cacheFiles.forEach { file ->
-                if (file.lastModified() < cutoffTime) {
-                    file.delete()
-                    Timber.d("📍 Removed old tile (time-based): ${file.name}")
+            MapType.values().forEach { mapType ->
+                val typeCacheDir = getCacheDir(mapType)
+                val cacheFiles = typeCacheDir.listFiles() ?: return@forEach
+                val cutoffTime = System.currentTimeMillis() - (30 * 60 * 1000) // 30 minutes
+
+                cacheFiles.forEach { file ->
+                    if (file.lastModified() < cutoffTime) {
+                        file.delete()
+                        Timber.d("📍 Removed old tile (time-based) from ${mapType.displayName} cache: ${file.name}")
+                    }
                 }
             }
         } catch (e: Exception) {
             Timber.e(e, "📍 Error evicting old tiles")
         }
     }
-    
+
     /**
      * Get tiles needed for a map view with priority (visible first, then buffer)
      */
@@ -290,6 +321,7 @@ class OpenStreetMapTileManager(private val context: Context) {
         zoom: Int,
         mapWidth: Int,
         mapHeight: Int,
+        mapType: MapType,
         bufferPercentage: Double = 0.4
     ): Pair<List<TileCoordinate>, List<TileCoordinate>> {
         val tileSize = 256
@@ -314,7 +346,7 @@ class OpenStreetMapTileManager(private val context: Context) {
 
         for (x in visibleStartX..visibleEndX) {
             for (y in visibleStartY..visibleEndY) {
-                visibleTiles.add(TileCoordinate(x, y, zoom))
+                visibleTiles.add(TileCoordinate(x, y, zoom, mapType))
             }
         }
 
@@ -322,14 +354,14 @@ class OpenStreetMapTileManager(private val context: Context) {
         val bufferTiles = mutableListOf<TileCoordinate>()
         for (x in startX..endX) {
             for (y in startY..endY) {
-                val tile = TileCoordinate(x, y, zoom)
+                val tile = TileCoordinate(x, y, zoom, mapType)
                 if (!visibleTiles.contains(tile)) {
                     bufferTiles.add(tile)
                 }
             }
         }
-        
-        Timber.d("📍 Loading ${visibleTiles.size} visible tiles + ${bufferTiles.size} buffer tiles")
+
+        Timber.d("📍 Loading ${visibleTiles.size} visible tiles + ${bufferTiles.size} buffer tiles for ${mapType.displayName}")
         return Pair(visibleTiles, bufferTiles)
     }
 
@@ -342,7 +374,7 @@ class OpenStreetMapTileManager(private val context: Context) {
             val scale = 2.0.pow(tile.zoom - lowerZoom)
             val lowerX = (tile.x / scale).toInt()
             val lowerY = (tile.y / scale).toInt()
-            TileCoordinate(lowerX, lowerY, lowerZoom)
+            TileCoordinate(lowerX, lowerY, lowerZoom, tile.mapType)
         } else null
     }
 
@@ -354,12 +386,13 @@ class OpenStreetMapTileManager(private val context: Context) {
         centerTileY: Double,
         zoom: Int,
         mapWidth: Int,
-        mapHeight: Int
+        mapHeight: Int,
+        mapType: MapType
     ): List<TileCoordinate> {
-        val (visibleTiles, bufferTiles) = getTilesForViewWithPriority(centerTileX, centerTileY, zoom, mapWidth, mapHeight, 0.0)
+        val (visibleTiles, bufferTiles) = getTilesForViewWithPriority(centerTileX, centerTileY, zoom, mapWidth, mapHeight, mapType, 0.0)
         return visibleTiles + bufferTiles
     }
-    
+
     /**
      * Get tiles needed for a map view with buffer zone (for backward compatibility)
      */
@@ -369,37 +402,56 @@ class OpenStreetMapTileManager(private val context: Context) {
         zoom: Int,
         mapWidth: Int,
         mapHeight: Int,
+        mapType: MapType,
         bufferPercentage: Double = 0.4
     ): List<TileCoordinate> {
-        val (visibleTiles, bufferTiles) = getTilesForViewWithPriority(centerTileX, centerTileY, zoom, mapWidth, mapHeight, bufferPercentage)
+        val (visibleTiles, bufferTiles) = getTilesForViewWithPriority(centerTileX, centerTileY, zoom, mapWidth, mapHeight, mapType, bufferPercentage)
         return visibleTiles + bufferTiles
     }
-    
+
     /**
-     * Clear all cached tiles
+     * Clear all or specific cached tiles
      */
-    fun clearCache() {
+    fun clearCache(mapType: MapType? = null) {
         try {
-            cacheDir.listFiles()?.forEach { it.delete() }
-            Timber.d("📍 Map cache cleared")
+            when (mapType) {
+                null -> {
+                    // Clear all caches
+                    cacheDir.deleteRecursively()
+                    cacheDir.mkdirs()
+                    streetCacheDir.mkdirs()
+                    satelliteCacheDir.mkdirs()
+                    Timber.d("📍 All map caches cleared")
+                }
+                else -> {
+                    // Clear specific map type cache
+                    val typeCacheDir = getCacheDir(mapType)
+                    typeCacheDir.deleteRecursively()
+                    typeCacheDir.mkdirs()
+                    Timber.d("📍 ${mapType.displayName} cache cleared")
+                }
+            }
         } catch (e: Exception) {
             Timber.e(e, "📍 Error clearing cache")
         }
     }
-    
+
     /**
-     * Get cache size in MB
+     * Get cache size in MB for all or a specific map type
      */
-    fun getCacheSizeMB(): Double {
+    fun getCacheSizeMB(mapType: MapType? = null): Double {
         return try {
-            val files = cacheDir.listFiles() ?: return 0.0
-            files.sumOf { it.length() } / (1024.0 * 1024.0)
+            val targetDir = when (mapType) {
+                null -> cacheDir
+                else -> getCacheDir(mapType)
+            }
+            targetDir.walk().filter { it.isFile }.sumOf { it.length() } / (1024.0 * 1024.0)
         } catch (e: Exception) {
             Timber.e(e, "📍 Error getting cache size")
             0.0
         }
     }
-    
+
     /**
      * Get cache hit rate
      */
@@ -407,7 +459,7 @@ class OpenStreetMapTileManager(private val context: Context) {
         val total = cacheHits + cacheMisses
         return if (total > 0) cacheHits.toDouble() / total else 0.0
     }
-    
+
     /**
      * Get average tile load time in milliseconds
      */
@@ -416,7 +468,7 @@ class OpenStreetMapTileManager(private val context: Context) {
             tileLoadTimes.values.average().toLong()
         } else 0L
     }
-    
+
     /**
      * Get performance statistics
      */
@@ -424,7 +476,7 @@ class OpenStreetMapTileManager(private val context: Context) {
         val hitRate = getCacheHitRate() * 100
         val avgLoadTime = getAverageLoadTime()
         val cacheSize = getCacheSizeMB()
-        
+
         return "Cache: ${String.format("%.1f", cacheSize)}MB, " +
                "Hit Rate: ${String.format("%.1f", hitRate)}%, " +
                "Avg Load: ${avgLoadTime}ms"
@@ -438,7 +490,7 @@ class OpenStreetMapTileManager(private val context: Context) {
             val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             val network = connectivityManager.activeNetwork
             val capabilities = connectivityManager.getNetworkCapabilities(network)
-            
+
             when {
                 capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true -> 0.5  // 50% buffer on WiFi
                 capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true -> {
@@ -464,18 +516,18 @@ class OpenStreetMapTileManager(private val context: Context) {
         if (directTile != null) {
             return directTile
         }
-        
-        // If not available, try lower resolution first
-        val lowerResTile = getLowerResolutionTile(tile)
-        if (lowerResTile != null) {
-            val lowerResBitmap = getTileBitmap(lowerResTile)
-            if (lowerResBitmap != null) {
-                // Return the lower resolution tile immediately
-                // The high-res tile will be loaded in background by the caller
-                return lowerResBitmap
+
+        // For satellite tiles, try lower resolution first
+        if (tile.mapType == MapType.SATELLITE) {
+            val lowerResTile = getLowerResolutionTile(tile)
+            if (lowerResTile != null) {
+                val lowerResBitmap = getTileBitmap(lowerResTile)
+                if (lowerResBitmap != null) {
+                    return lowerResBitmap
+                }
             }
         }
-        
+
         // Fallback to direct loading
         return getTileBitmap(tile)
     }
@@ -486,26 +538,26 @@ class OpenStreetMapTileManager(private val context: Context) {
     suspend fun batchDownloadTiles(tiles: List<TileCoordinate>, batchSize: Int = 5): Map<String, Bitmap> {
         return withContext(Dispatchers.IO) {
             val results = mutableMapOf<String, Bitmap>()
-            
+
             // Split tiles into batches
             val batches = tiles.chunked(batchSize)
-            
+
             for (batch in batches) {
                 val batchResults = batch.map { tile ->
                     async {
                         val bitmap = getTileBitmap(tile)
-                        tile.toFileName() to bitmap
+                        tile.toCacheKey() to bitmap
                     }
                 }.awaitAll()
-                
+
                 // Add successful downloads to results
-                for ((fileName, bitmap) in batchResults) {
+                for ((cacheKey, bitmap) in batchResults) {
                     if (bitmap != null) {
-                        results[fileName] = bitmap
+                        results[cacheKey] = bitmap
                     }
                 }
             }
-            
+
             Timber.d("📍 Batch downloaded ${results.size}/${tiles.size} tiles")
             results
         }
@@ -516,34 +568,35 @@ class OpenStreetMapTileManager(private val context: Context) {
      */
     fun handleMemoryPressure() {
         try {
-            val cacheFiles = cacheDir.listFiles() ?: return
-            val totalSize = cacheFiles.sumOf { it.length() }
-            
             // Reduce cache to 50% when memory pressure is detected
             val targetSize = maxCacheSize / 2
             
-            if (totalSize > targetSize) {
-                // Sort by modification time (oldest first)
-                val sortedFiles = cacheFiles.sortedBy { it.lastModified() }
-                
-                // Remove oldest files until we're under the target
-                var currentSize = totalSize
-                for (file in sortedFiles) {
-                    if (currentSize <= targetSize) break
-                    currentSize -= file.length()
-                    file.delete()
-                    Timber.d("📍 Removed file due to memory pressure: ${file.name}")
+            MapType.values().forEach { mapType ->
+                val typeCacheDir = getCacheDir(mapType)
+                val cacheFiles = typeCacheDir.listFiles() ?: return@forEach
+                val totalSize = cacheFiles.sumOf { it.length() }
+                val typeTargetSize = targetSize / MapType.values().size
+
+                if (totalSize > typeTargetSize) {
+                    val sortedFiles = cacheFiles.sortedBy { it.lastModified() }
+                    var currentSize = totalSize
+                    for (file in sortedFiles) {
+                        if (currentSize <= typeTargetSize) break
+                        currentSize -= file.length()
+                        file.delete()
+                        Timber.d("📍 Removed file due to memory pressure from ${mapType.displayName}: ${file.name}")
+                    }
                 }
-                
-                // Force garbage collection
-                System.gc()
-                Timber.d("📍 Memory pressure handled - cache reduced to ${String.format("%.1f", currentSize / (1024.0 * 1024.0))}MB")
             }
+
+            // Force garbage collection
+            System.gc()
+            Timber.d("📍 Memory pressure handled - cache reduced")
         } catch (e: Exception) {
             Timber.e(e, "📍 Error handling memory pressure")
         }
     }
-    
+
     /**
      * Check if memory pressure should be handled
      */
@@ -553,7 +606,7 @@ class OpenStreetMapTileManager(private val context: Context) {
             val usedMemory = runtime.totalMemory() - runtime.freeMemory()
             val maxMemory = runtime.maxMemory()
             val memoryUsage = usedMemory.toDouble() / maxMemory
-            
+
             // Trigger if memory usage is above 80%
             memoryUsage > 0.8
         } catch (e: Exception) {
@@ -570,7 +623,7 @@ class OpenStreetMapTileManager(private val context: Context) {
             val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             val network = connectivityManager.activeNetwork
             val capabilities = connectivityManager.getNetworkCapabilities(network)
-            
+
             when {
                 capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true -> 5000  // 5s on WiFi
                 capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true -> {
@@ -586,13 +639,13 @@ class OpenStreetMapTileManager(private val context: Context) {
             10000  // Default 10s timeout
         }
     }
-    
+
     /**
      * Download tile with adaptive timeout
      */
     private suspend fun downloadTileWithAdaptiveTimeout(tile: TileCoordinate): Bitmap? {
         val timeout = getAdaptiveTimeout()
-        
+
         return withTimeoutOrNull(timeout.toLong()) {
             downloadTileWithRetry(tile, maxRetries = 3)
         }

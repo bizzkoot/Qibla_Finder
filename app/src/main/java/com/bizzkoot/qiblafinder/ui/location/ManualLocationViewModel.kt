@@ -19,31 +19,33 @@ data class ManualLocationUiState(
     val tileCount: Int = 0,
     val cacheSizeMB: Double = 0.0,
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val selectedMapType: MapType = MapType.STREET, // New field
+    val availableMapTypes: List<MapType> = listOf(MapType.STREET, MapType.SATELLITE)
 )
 
 class ManualLocationViewModel(
     private val locationRepository: LocationRepository
 ) : ViewModel() {
-    
+
     private val _uiState = MutableStateFlow(ManualLocationUiState())
     val uiState: StateFlow<ManualLocationUiState> = _uiState.asStateFlow()
-    
+
     init {
         Timber.d("📍 ManualLocationViewModel - Initializing ViewModel")
         loadInitialLocation()
     }
-    
+
     private fun loadInitialLocation() {
         viewModelScope.launch {
             Timber.d("📍 ManualLocationViewModel - Starting loadInitialLocation")
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
+
             // Fetch location only ONCE with a timeout
             val locationState = withTimeoutOrNull(5000) { // 5-second timeout
                 locationRepository.getLocation().first { it is LocationState.Available }
             }
-            
+
             if (locationState is LocationState.Available) {
                 val location = MapLocation(
                     latitude = locationState.location.latitude,
@@ -69,7 +71,7 @@ class ManualLocationViewModel(
             }
         }
     }
-    
+
     fun updateSelectedLocation(location: MapLocation) {
         _uiState.value = _uiState.value.copy(
             selectedLocation = location,
@@ -81,11 +83,11 @@ class ManualLocationViewModel(
     fun updateAccuracy(accuracy: Int) {
         _uiState.value = _uiState.value.copy(accuracyInMeters = accuracy)
     }
-    
+
     fun updateTileInfo(tileCount: Int, cacheSizeMB: Double) {
         _uiState.value = _uiState.value.copy(tileCount = tileCount, cacheSizeMB = cacheSizeMB)
     }
-    
+
     fun confirmLocation(): MapLocation? {
         return _uiState.value.selectedLocation?.also { mapLocation ->
             val location = android.location.Location("manual").apply {
@@ -96,9 +98,25 @@ class ManualLocationViewModel(
             Timber.d("📍 Location confirmed: $mapLocation")
         }
     }
-    
+
     fun refreshLocation() {
         Timber.d("📍 ManualLocationViewModel - Refreshing location")
         loadInitialLocation()
+    }
+
+    fun updateMapType(mapType: MapType) {
+        _uiState.value = _uiState.value.copy(
+            selectedMapType = mapType,
+            isLoading = true, // To show loading indicator while tiles are switching
+            error = null
+        )
+
+        // The view will react to the state change and reload the tiles.
+        // We can add a small delay to allow the UI to update.
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(50) // Small delay
+            _uiState.value = _uiState.value.copy(isLoading = false)
+            Timber.d("📍 Map type changed to: ${mapType.displayName}")
+        }
     }
 } 

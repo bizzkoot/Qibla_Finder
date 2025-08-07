@@ -6,6 +6,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Satellite
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
@@ -30,16 +32,16 @@ fun ManualLocationScreen(
     timber.log.Timber.d("🎯 ManualLocationScreen - ENTERING ManualLocationScreen composable")
     timber.log.Timber.d("🎯 ManualLocationScreen - ViewModel: $viewModel")
     val uiState by viewModel.uiState.collectAsState()
-    
+
     // Debug logging
     LaunchedEffect(Unit) {
         Timber.d("📍 ManualLocationScreen - Screen initialized with viewModel: $viewModel")
     }
-    
+
     LaunchedEffect(uiState) {
-        Timber.d("📍 ManualLocationScreen - UI State updated: isLoading=${uiState.isLoading}, error=${uiState.error}, currentLocation=${uiState.currentLocation}")
+        Timber.d("📍 ManualLocationScreen - UI State updated: isLoading=${uiState.isLoading}, error=${uiState.error}, currentLocation=${uiState.currentLocation}, mapType=${uiState.selectedMapType}")
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -56,6 +58,11 @@ fun ManualLocationScreen(
                     ) {
                         Icon(Icons.Default.LocationOn, contentDescription = "Refresh location")
                     }
+                    MapTypeToggle(
+                        selectedMapType = uiState.selectedMapType,
+                        availableMapTypes = uiState.availableMapTypes,
+                        onMapTypeChanged = { viewModel.updateMapType(it) }
+                    )
                 }
             )
         }
@@ -66,7 +73,7 @@ fun ManualLocationScreen(
                 .padding(paddingValues)
         ) {
             // Map View as the background
-            if (uiState.isLoading) {
+            if (uiState.isLoading && uiState.currentLocation == null) { // Show loading only if location is not yet available
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -129,6 +136,8 @@ fun ManualLocationScreen(
                     onTileInfoChanged = { tileCount, cacheSizeMB ->
                         viewModel.updateTileInfo(tileCount, cacheSizeMB)
                     },
+                    mapType = uiState.selectedMapType,
+                    onMapTypeFallback = { newMapType -> viewModel.updateMapType(newMapType) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -191,6 +200,60 @@ fun ManualLocationScreen(
                         Text("Confirm")
                     }
                 }
+            }
+
+            if (uiState.isLoading && uiState.currentLocation != null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MapTypeToggle(
+    selectedMapType: MapType,
+    availableMapTypes: List<MapType>,
+    onMapTypeChanged: (MapType) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = when (selectedMapType) {
+                    MapType.STREET -> Icons.Default.Map
+                    MapType.SATELLITE -> Icons.Default.Satellite
+                },
+                contentDescription = "Map Type: ${selectedMapType.displayName}"
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            availableMapTypes.forEach { mapType ->
+                DropdownMenuItem(
+                    text = { Text(mapType.displayName) },
+                    onClick = {
+                        onMapTypeChanged(mapType)
+                        expanded = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = when (mapType) {
+                                MapType.STREET -> Icons.Default.Map
+                                MapType.SATELLITE -> Icons.Default.Satellite
+                            },
+                            contentDescription = null
+                        )
+                    }
+                )
             }
         }
     }

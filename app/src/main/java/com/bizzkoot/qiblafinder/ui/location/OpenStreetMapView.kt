@@ -34,6 +34,8 @@ fun OpenStreetMapView(
     onLocationSelected: (MapLocation) -> Unit,
     onAccuracyChanged: (Int) -> Unit,
     onTileInfoChanged: (Int, Double) -> Unit = { _, _ -> },
+    mapType: MapType = MapType.STREET,
+    onMapTypeFallback: (MapType) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -45,10 +47,16 @@ fun OpenStreetMapView(
     var tileY by remember { mutableStateOf(0.0) }
 
     // --- Tile Cache & Loading State ---
-    var tileCache by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    var tileCache by remember(mapType) { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    
+
+    // Add cleanup when mapType changes
+    LaunchedEffect(mapType) {
+        // Clear old cache when switching map types
+        tileCache = emptyMap()
+    }
+
     // --- Drag State for Continuous Loading ---
     var isDragging by remember { mutableStateOf(false) }
     var lastDragPosition by remember { mutableStateOf(Pair(0.0, 0.0)) }
@@ -61,7 +69,7 @@ fun OpenStreetMapView(
     }
 
     // --- Tile Loading and Accuracy Calculation ---
-    LaunchedEffect(tileX, tileY, zoom) {
+    LaunchedEffect(tileX, tileY, zoom, mapType) { // Added mapType dependency
         // Update accuracy first
         val accuracyMeters = getAccuracyForZoom(zoom)
         onAccuracyChanged(accuracyMeters)
@@ -77,66 +85,68 @@ fun OpenStreetMapView(
         error = null
         try {
             val bufferSize = tileManager.getBufferSizeBasedOnConnection()
-            val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, bufferSize)
-            
-            // Load visible tiles first using batch download (priority 1)
-            val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
-            
-            if (isActive) {
-                tileCache = tileCache + visibleCache
+            val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, mapType, bufferSize)
+
+            // Add null safety and empty checks
+            if (visibleTiles.isNotEmpty()) {
+                // Load visible tiles first using batch download (priority 1)
+                val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
+
+                if (isActive) {
+                    tileCache = tileCache + visibleCache
+                    isLoading = false
+                }
+            } else {
                 isLoading = false
             }
-            
+
             // Load buffer tiles in background using batch download (priority 2)
-            launch {
-                try {
-                    val bufferCache = tileManager.batchDownloadTiles(bufferTiles, batchSize = 5)
-                    
-                    if (isActive) {
-                        tileCache = tileCache + bufferCache
+            if (bufferTiles.isNotEmpty()) {
+                launch {
+                    try {
+                        val bufferCache = tileManager.batchDownloadTiles(bufferTiles, batchSize = 5)
+
+                        if (isActive) {
+                            tileCache = tileCache + bufferCache
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "📍 Error loading buffer tiles")
                     }
-                } catch (e: Exception) {
-                    Timber.e(e, "📍 Error loading buffer tiles")
                 }
             }
         } catch (e: Exception) {
             if (isActive) {
-                error = "Failed to load map: ${e.message}"
-                isLoading = false
+                val fallbackMapType = MapTypeFallbackManager.getFallbackMapType(mapType, e)
+                if (fallbackMapType != mapType) {
+                    onMapTypeFallback(fallbackMapType)
+                } else {
+                    error = "Failed to load ${mapType.displayName.lowercase()} map: ${e.message}"
+                    isLoading = false
+                }
             }
         }
     }
-    
+
     // Update tile info when cache changes
     LaunchedEffect(tileCache) {
-        onTileInfoChanged(tileCache.size, tileManager.getCacheSizeMB())
+        onTileInfoChanged(tileCache.size, tileManager.getCacheSizeMB(mapType))
     }
-    
+
     // Continuous tile loading during drag
     LaunchedEffect(isDragging, lastDragPosition) {
         if (isDragging) {
             try {
                 val (dragTileX, dragTileY) = lastDragPosition
                 val bufferSize = tileManager.getBufferSizeBasedOnConnection()
-                val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(dragTileX, dragTileY, zoom, 800, 800, bufferSize)
-                
-                // Load visible tiles first during drag using batch download
-                val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
-                
-                if (isActive) {
-                    tileCache = tileCache + visibleCache
-                }
-                
-                // Load buffer tiles in background using batch download
-                launch {
-                    try {
-                        val bufferCache = tileManager.batchDownloadTiles(bufferTiles, batchSize = 5)
-                        
-                        if (isActive) {
-                            tileCache = tileCache + bufferCache
-                        }
-                    } catch (e: Exception) {
-                        Timber.e(e, "📍 Error loading buffer tiles during drag")
+                val (visibleTiles, _) = tileManager.getTilesForViewWithPriority(dragTileX, dragTileY, zoom, 800, 800, mapType, bufferSize)
+
+                // Add null safety for drag loading
+                if (visibleTiles.isNotEmpty()) {
+                    // Load visible tiles first during drag using batch download
+                    val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
+
+                    if (isActive) {
+                        tileCache = tileCache + visibleCache
                     }
                 }
             } catch (e: Exception) {
@@ -160,7 +170,7 @@ fun OpenStreetMapView(
                         tileY -= dragAmount.y / tileSize
                         val (newLat, newLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
                         onLocationSelected(MapLocation(newLat, newLng))
-                        
+
                         // Update drag position for continuous loading
                         lastDragPosition = Pair(tileX, tileY)
                     },
@@ -183,9 +193,9 @@ fun OpenStreetMapView(
             val centerX = mapWidth / 2f
             val centerY = mapHeight / 2f
 
-            tileCache.forEach { (fileName, bitmap) ->
-                val tile = parseTileFileName(fileName)
-                if (tile != null) {
+            tileCache.forEach { (cacheKey, bitmap) ->
+                val tile = parseTileCacheKey(cacheKey)
+                if (tile != null && tile.mapType == mapType) {
                     val drawX = (tile.x - floor(tileX)).toFloat() * 256f - tileOffsetX + centerX
                     val drawY = (tile.y - floor(tileY)).toFloat() * 256f - tileOffsetY + centerY
                     drawImage(bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
@@ -212,7 +222,7 @@ fun OpenStreetMapView(
         Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = 130.dp, end = 16.dp)) {
             IconButton(
                 onClick = {
-                    val newZoom = min(zoom + 1, 18)
+                    val newZoom = min(zoom + 1, 19) // Max zoom 19
                     val (currentLat, currentLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
                     val (newTileX, newTileY) = tileManager.latLngToTileXY(currentLat, currentLng, newZoom)
                     zoom = newZoom
@@ -227,7 +237,7 @@ fun OpenStreetMapView(
             Spacer(modifier = Modifier.height(8.dp))
             IconButton(
                 onClick = {
-                    val newZoom = max(zoom - 1, 10)
+                    val newZoom = max(zoom - 1, 2) // Min zoom 2
                     val (currentLat, currentLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
                     val (newTileX, newTileY) = tileManager.latLngToTileXY(currentLat, currentLng, newZoom)
                     zoom = newZoom
@@ -240,18 +250,32 @@ fun OpenStreetMapView(
                 Icon(Icons.Filled.Remove, contentDescription = "Zoom Out", tint = Color.White)
             }
         }
-
-        // Removed Tiles/Cache card - moved to Instructions card
     }
 }
 
-private fun parseTileFileName(fileName: String): TileCoordinate? {
+private fun parseTileCacheKey(key: String): TileCoordinate? {
     return try {
-        val parts = fileName.removePrefix("tile_").removeSuffix(".png").split("_")
-        if (parts.size == 3) {
-            TileCoordinate(zoom = parts[0].toInt(), x = parts[1].toInt(), y = parts[2].toInt())
-        } else null
+        val parts = key.split("_")
+        when (parts.size) {
+            3 -> {
+                // Legacy format: zoom_x_y (for backward compatibility)
+                val zoom = parts[0].toInt()
+                val x = parts[1].toInt()
+                val y = parts[2].toInt()
+                TileCoordinate(x, y, zoom, MapType.STREET) // Default to street
+            }
+            4 -> {
+                // New format: mapType_zoom_x_y
+                val mapType = MapType.valueOf(parts[0].uppercase())
+                val zoom = parts[1].toInt()
+                val x = parts[2].toInt()
+                val y = parts[3].toInt()
+                TileCoordinate(x, y, zoom, mapType)
+            }
+            else -> null
+        }
     } catch (e: Exception) {
+        Timber.e(e, "Failed to parse tile cache key: $key")
         null
     }
 }

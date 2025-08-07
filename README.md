@@ -1,61 +1,97 @@
 # 🕋 Qibla Finder
 
 <div align="center">
-  <img src="master_icon.png" alt="Qibla Finder Icon" width="120" height="120">
+  <img src="master_icon.png" alt="Qibla Finder Icon" width="150" height="150">
   <br>
-  <em>Find your direction to the Kaaba with precision and ease</em>
+  <h2><em>Find your direction to the Kaaba with precision and ease</em></h2>
+  
+  [![Android CI/CD](https://github.com/bizzkoot/Qibla_Finder/workflows/Android%20CI/CD/badge.svg)](https://github.com/bizzkoot/Qibla_Finder/actions)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+  [![Android](https://img.shields.io/badge/Android-7.0+-green.svg)](https://developer.android.com/about/versions/nougat)
+  [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-blue.svg)](https://kotlinlang.org/)
+  
+  <br>
+  
+  **[📥 Download Latest Release](https://github.com/bizzkoot/Qibla_Finder/releases/latest)** | **[🐛 Report Bug](https://github.com/bizzkoot/Qibla_Finder/issues)** | **[💡 Request Feature](https://github.com/bizzkoot/Qibla_Finder/issues)**
+  
+  <br>
+  
+  *Ever found yourself in a new city, unsure which way to face for prayer? Qibla Finder uses your phone's sensors and GPS to point you in the right direction - no more guessing or asking around!*
 </div>
 
-Ever found yourself in a new city, unsure which way to face for prayer? I built this app to solve that exact problem. Qibla Finder uses your phone's sensors and GPS to point you in the right direction - no more guessing or asking around!
+---
 
 ## 🌟 What Makes This App Special
 
-I've packed this app with features that actually work in real-world situations:
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="33%">
+        <strong>🎯 Pinpoint Accuracy</strong><br>
+        <em>Uses your phone's compass and GPS to calculate the exact direction to the Kaaba</em>
+      </td>
+      <td align="center" width="33%">
+        <strong>🗺️ Smart Location</strong><br>
+        <em>Can't get GPS signal? No problem - manually set your location on the map</em>
+      </td>
+      <td align="center" width="33%">
+        <strong>📱 AR Mode</strong><br>
+        <em>Point your camera and see a real-time arrow showing you exactly where to face</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>🧭 Compass Calibration</strong><br>
+        <em>Interactive calibration to make sure your compass is spot-on</em>
+      </td>
+      <td align="center">
+        <strong>📐 Phone Detection</strong><br>
+        <em>Knows when your phone is flat or tilted - gives you the right guidance</em>
+      </td>
+      <td align="center">
+        <strong>⚡ Fast & Reliable</strong><br>
+        <em>Works offline, loads maps quickly, and doesn't drain your battery</em>
+      </td>
+    </tr>
+  </table>
+</div>
 
-- **🎯 Pinpoint Accuracy**: Uses your phone's compass and GPS to calculate the exact direction to the Kaaba
-- **🗺️ Smart Location**: Can't get GPS signal? No problem - manually set your location on the map
-- **📱 AR Mode**: Point your camera and see a real-time arrow showing you exactly where to face
-- **🧭 Compass Calibration**: Interactive calibration to make sure your compass is spot-on
-- **📐 Phone Detection**: Knows when your phone is flat or tilted - gives you the right guidance
-- **⚡ Fast & Reliable**: Works offline, loads maps quickly, and doesn't drain your battery
-- **🎨 Beautiful Design**: Clean, modern interface that's easy to use
+---
 
-## 📱 Screenshots
+## 📱 App Screenshots
 
 <div align="center">
   <table>
     <tr>
       <td align="center">
-        <img src="Screenshot/Compass with GPS.jpg" alt="Main Compass with GPS" width="200">
+        <img src="Screenshot/Compass with GPS.jpg" alt="Main Compass with GPS" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Main Compass</strong><br>
         <em>Find your direction using GPS location</em>
       </td>
       <td align="center">
-        <img src="Screenshot/AR.jpg" alt="Augmented Reality Mode" width="200">
+        <img src="Screenshot/AR.jpg" alt="Augmented Reality Mode" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>AR Camera Mode</strong><br>
         <em>Point your camera for real-time guidance</em>
       </td>
-    </tr>
-    <tr>
       <td align="center">
-        <img src="Screenshot/Compass with Manual Location.jpg" alt="Manual Location Setting" width="200">
+        <img src="Screenshot/Compass with Manual Location.jpg" alt="Manual Location Setting" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Manual Location</strong><br>
         <em>Set your location when GPS is unavailable</em>
       </td>
-      <td align="center">
-        <img src="Screenshot/Manual Location Adjustment.jpg" alt="Location Adjustment" width="200">
-        <br><strong>Location Adjustment</strong><br>
-        <em>Fine-tune your position on the map</em>
-      </td>
     </tr>
     <tr>
       <td align="center">
-        <img src="Screenshot/Calibrate Compass.jpg" alt="Compass Calibration" width="200">
+        <img src="Screenshot/Manual Location Adjustment.jpg" alt="Location Adjustment" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <br><strong>Location Adjustment</strong><br>
+        <em>Fine-tune your position on the map</em>
+      </td>
+      <td align="center">
+        <img src="Screenshot/Calibrate Compass.jpg" alt="Compass Calibration" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Compass Calibration</strong><br>
         <em>Ensure accurate compass readings</em>
       </td>
       <td align="center">
-        <img src="Screenshot/Trobleshooting Guide.jpg" alt="Troubleshooting Guide" width="200">
+        <img src="Screenshot/Trobleshooting Guide.jpg" alt="Troubleshooting Guide" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Troubleshooting Guide</strong><br>
         <em>Get help when you need it</em>
       </td>
@@ -63,123 +99,97 @@ I've packed this app with features that actually work in real-world situations:
   </table>
 </div>
 
-## 🛠️ Built With Modern Tech
+---
 
-I chose these technologies because they're reliable and fast:
+## 🚀 Quick Start
 
-- **Kotlin** - Because it's the future of Android development
-- **Jetpack Compose** - For smooth, beautiful UI animations
-- **Google Location Services** - For accurate GPS positioning
-- **Android Sensors** - To read your phone's compass and movement
-- **OpenStreetMap** - Free, detailed maps that work offline
-- **ARCore** - For the augmented reality camera feature
-- **GitHub Actions** - So the app builds automatically when I update it
+<div align="center">
+  <h3>📥 Download & Install in 3 Steps</h3>
+</div>
 
-## 🚀 Want to Try It Out?
+### **Option 1: Download Pre-built APK (Recommended)**
+1. **📥 Download** the latest release from [Releases](https://github.com/bizzkoot/Qibla_Finder/releases)
+2. **📱 Install** directly on your Android device
+3. **🎯 Start** finding your Qibla direction!
 
-### What You'll Need
-- Android Studio (the latest version works best)
-- A phone running Android 7.0 or newer
-- Google Play Services (most phones have this)
-
-### Quick Setup
-
-#### Option 1: Download Pre-built APK (Recommended)
-1. **Download the latest release**
-   - Go to [Releases](https://github.com/bizzkoot/Qibla_Finder/releases)
-   - Download the latest APK file
-   - Install directly on your Android device
-
-#### Option 2: Build from Source
-1. **Get the code**
+### **Option 2: Build from Source**
 ```bash
+# 1. Clone the repository
 git clone https://github.com/bizzkoot/Qibla_Finder.git
-```
-
-2. **Open it up**
-```bash
 cd Qibla_Finder
-```
 
-3. **Build it**
-```bash
-./gradlew build
-```
+# 2. Build the app
+./gradlew assembleDebug
 
-4. **Install on your phone**
-```bash
+# 3. Install on your device
 ./gradlew installDebug
 ```
 
-That's it! The app should now be on your phone and ready to use.
+---
 
-## 📋 What Your Phone Needs
+## 🛠️ Built With Modern Tech
 
-- **Android Version**: 7.0 or newer (covers most phones from the last 5 years)
-- **Latest Version**: Works great on Android 14
-- **Permissions**: Location access (for GPS) and camera (for AR mode)
-- **Hardware**: GPS, compass, and motion sensors (most modern phones have these)
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <strong>🐘 Kotlin</strong><br>
+        <em>Future of Android development</em>
+      </td>
+      <td align="center">
+        <strong>🎨 Jetpack Compose</strong><br>
+        <em>Smooth, beautiful UI animations</em>
+      </td>
+      <td align="center">
+        <strong>📍 Google Location Services</strong><br>
+        <em>Accurate GPS positioning</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>📡 Android Sensors</strong><br>
+        <em>Compass and movement detection</em>
+      </td>
+      <td align="center">
+        <strong>🗺️ OpenStreetMap</strong><br>
+        <em>Free, detailed offline maps</em>
+      </td>
+      <td align="center">
+        <strong>📱 ARCore</strong><br>
+        <em>Augmented reality camera feature</em>
+      </td>
+    </tr>
+  </table>
+</div>
 
-## 🔧 Building the App
+---
 
-### For Testing (Debug Version)
-```bash
-./gradlew assembleDebug
-```
+## 📋 System Requirements
 
-### For Release (Signed Version)
-```bash
-./gradlew assembleRelease
-```
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <strong>📱 Android Version</strong><br>
+        <em>7.0 or newer</em>
+      </td>
+      <td align="center">
+        <strong>🔐 Permissions</strong><br>
+        <em>Location & Camera</em>
+      </td>
+      <td align="center">
+        <strong>⚙️ Hardware</strong><br>
+        <em>GPS, Compass, Motion Sensors</em>
+      </td>
+    </tr>
+  </table>
+</div>
 
-### Running Tests
-```bash
-./gradlew test
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Want to Help?
-
-I'd love your help making this app even better! Here's how:
-
-1. **Fork** this repository
-2. **Create** a new branch for your feature (`git checkout -b feature/YourAmazingIdea`)
-3. **Make** your changes and commit them (`git commit -m 'Add your amazing feature'`)
-4. **Push** to your branch (`git push origin feature/YourAmazingIdea`)
-5. **Open** a Pull Request and let's discuss your changes!
-
-Feel free to open an issue if you find a bug or have a suggestion.
-
-## 📞 Need Help?
-
-Found a bug? Have a question? Want to suggest a feature? Just open an issue on GitHub - I'll get back to you as soon as I can!
-
-## 🗺️ What's Coming Next
-
-I'm always working on making this app better. Here's what I'm planning:
-
-- [ ] **Better AR Experience** - More accurate and smoother camera guidance
-- [ ] **Offline Maps** - Download maps so you can use the app anywhere
-- [ ] **Multiple Languages** - Support for Arabic, Indonesian, and more
-- [ ] **Home Screen Widget** - Quick Qibla direction without opening the app
-- [ ] **Wear OS Support** - Use your smartwatch to find the Qibla direction
-
-## 📊 Development Status
-
-I keep track of everything I'm working on in [Progress.md](Progress.md). Check it out to see what's done and what's still in progress!
-
-## 🔄 CI/CD Status
-
-[![Android CI/CD](https://github.com/bizzkoot/Qibla_Finder/workflows/Android%20CI/CD/badge.svg)](https://github.com/bizzkoot/Qibla_Finder/actions)
-
-
+---
 
 ## 🎯 How It Works
 
-### App Flow & Logic
+### **App Flow & Logic**
 
 ```mermaid
 flowchart TD
@@ -224,29 +234,110 @@ flowchart TD
     style R fill:#fff3e0
 ```
 
-### Finding the Right Direction
-The app uses your phone's GPS to know exactly where you are, then calculates the direction to the Kaaba in Mecca. It's like having a digital compass that always points to the right place!
+### **Key Features Explained**
 
-### When GPS Doesn't Work
-Sometimes GPS signals are weak (like indoors). No worries - you can manually set your location on the map. Just drag the pin to where you are, and the app will calculate the direction from there.
-
-### AR Camera Mode
-Point your camera at the sky, and you'll see an arrow showing you exactly which way to face. It's like having a virtual guide pointing you in the right direction!
-
-### Smart Phone Detection
-The app knows when your phone is lying flat or being held up. It gives you different guidance based on how you're holding it, so you always get the right instructions.
-
-## 🚨 Having Trouble?
-
-The app includes a built-in troubleshooting guide that covers most common issues. If you're still having problems, check the [Issues](https://github.com/bizzkoot/Qibla_Finder/issues) section or open a new one - I'm here to help!
-
-## 📈 How Well Does It Work?
-
-- **GPS Accuracy**: Within 5 meters when outdoors, 30 meters when using network location
-- **Compass Precision**: Within 2 degrees after calibration (that's really accurate!)
-- **AR Smoothness**: 60 frames per second on supported phones
-- **Map Speed**: Loads in under 2 seconds, even on slower connections
+- **🎯 Pinpoint Accuracy**: Uses GPS and compass to calculate exact direction to Kaaba
+- **🗺️ Smart Location**: Manual location setting when GPS is unavailable
+- **📱 AR Camera Mode**: Real-time camera guidance with directional arrows
+- **🧭 Compass Calibration**: Interactive calibration for accuracy
+- **📐 Phone Detection**: Adapts guidance based on phone orientation
 
 ---
 
-**Built with ❤️ for the Muslim community**
+## 📊 Performance Metrics
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <strong>🎯 GPS Accuracy</strong><br>
+        <em>Within 5m outdoors, 30m with network location</em>
+      </td>
+      <td align="center">
+        <strong>🧭 Compass Precision</strong><br>
+        <em>Within 2° after calibration</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>📱 AR Smoothness</strong><br>
+        <em>60 FPS on supported devices</em>
+      </td>
+      <td align="center">
+        <strong>🗺️ Map Speed</strong><br>
+        <em>Loads in under 2 seconds</em>
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
+## 📚 Documentation
+
+### **For Developers**
+- [**🚀 Git Push Guide**](GIT_PUSH_GUIDE.md) - Complete guide for pushing changes and triggering releases
+- [**📝 Commit Conventions**](COMMIT_CONVENTIONS.md) - How to write commit messages for automated versioning
+- [**🎯 Release Guide**](RELEASE_GUIDE.md) - Understanding the automated release system
+- [**🔧 GitHub Steps**](GitHub_Steps.md) - GitHub setup and configuration
+- [**📊 Progress Tracking**](Progress.md) - Development progress and roadmap
+
+### **For Users**
+- [**🔍 Troubleshooting Guide**](Troubleshooting.md) - Common issues and solutions
+- [**⚙️ Technical Details**](Technical.md) - Technical implementation details
+- [**🎨 UX Design**](UX.md) - User experience design principles
+
+---
+
+## 🗺️ Roadmap
+
+<div align="center">
+  <h3>🚧 What's Coming Next</h3>
+</div>
+
+- [ ] **🎯 Better AR Experience** - More accurate and smoother camera guidance
+- [ ] **🗺️ Offline Maps** - Download maps so you can use the app anywhere
+- [ ] **🌍 Multiple Languages** - Support for Arabic, Indonesian, and more
+- [ ] **📱 Home Screen Widget** - Quick Qibla direction without opening the app
+- [ ] **⌚ Wear OS Support** - Use your smartwatch to find the Qibla direction
+
+---
+
+## 🤝 Contributing
+
+<div align="center">
+  <h3>💡 Want to Help?</h3>
+  <p>I'd love your help making this app even better!</p>
+</div>
+
+1. **🍴 Fork** this repository
+2. **🌿 Create** a new branch (`git checkout -b feature/YourAmazingIdea`)
+3. **✏️ Make** your changes and commit them (`git commit -m 'Add your amazing feature'`)
+4. **📤 Push** to your branch (`git push origin feature/YourAmazingIdea`)
+5. **🔀 Open** a Pull Request and let's discuss your changes!
+
+---
+
+## 🚨 Support & Help
+
+<div align="center">
+  <h3>❓ Need Help?</h3>
+</div>
+
+- **🐛 Found a bug?** [Open an issue](https://github.com/bizzkoot/Qibla_Finder/issues)
+- **💡 Have a suggestion?** [Request a feature](https://github.com/bizzkoot/Qibla_Finder/issues)
+- **❓ Need help?** Check the [Troubleshooting Guide](Troubleshooting.md)
+- **📧 Questions?** Open a GitHub issue
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+  <h3>🕋 Built with ❤️ for the Muslim community</h3>
+  <p><em>May this app help you find your direction to the Kaaba with ease and accuracy.</em></p>
+</div>

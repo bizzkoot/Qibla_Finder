@@ -3,6 +3,8 @@ package com.bizzkoot.qiblafinder.ui.location
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.bizzkoot.qiblafinder.utils.CompressionUtils
+import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -208,21 +210,24 @@ class OpenStreetMapTileManager(private val context: Context) {
     }
 
     /**
-     * Cache tile to local storage
+     * Cache tile to local storage with fallback support
      */
     private fun cacheTile(tile: TileCoordinate, bitmap: Bitmap) {
         try {
             val file = File(cacheDir, tile.toFileName())
-            val compressionQuality = getCompressionQuality(tile.zoom)
+            val deviceCapabilities = DeviceCapabilitiesDetector.getDeviceCapabilities(context)
+            val compressionQuality = CompressionUtils.getCompressionQuality(tile.zoom, deviceCapabilities)
             
             FileOutputStream(file).use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, compressionQuality, stream)
+                val success = CompressionUtils.compressBitmap(bitmap, compressionQuality, stream)
+                if (success) {
+                    // Manage cache size
+                    manageCacheSize()
+                    Timber.d("📍 Tile cached successfully: ${tile.toFileName()} with quality: $compressionQuality")
+                } else {
+                    Timber.e("📍 Failed to cache tile: ${tile.toFileName()}")
+                }
             }
-            
-            // Manage cache size
-            manageCacheSize()
-            
-            Timber.d("📍 Tile cached with ${compressionQuality}% quality: ${tile.toFileName()}")
         } catch (e: Exception) {
             Timber.e(e, "📍 Error caching tile: ${tile.toFileName()}")
         }

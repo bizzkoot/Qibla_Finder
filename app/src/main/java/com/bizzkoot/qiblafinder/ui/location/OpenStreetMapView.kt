@@ -30,6 +30,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 const val MAX_ZOOM_LEVEL = 19
+const val MAX_TILE_ZOOM_LEVEL = 18  // Maximum zoom level for tile downloads
 const val MIN_ZOOM_LEVEL = 2
 const val MAX_DIGITAL_ZOOM_FACTOR = 4f
 const val DIGITAL_ZOOM_STEP = 1.2f
@@ -41,6 +42,14 @@ private fun getMaxDigitalZoomForDevice(): Float {
         DeviceCapabilitiesDetector.isHighEndDevice() -> 4f
         DeviceCapabilitiesDetector.isMidRangeDevice() -> 2.5f
         else -> 2f
+    }
+}
+
+// Get maximum zoom level for the current map type provider
+private fun getMaxZoomForMapType(mapType: MapType): Int {
+    return when (mapType) {
+        MapType.STREET -> 18  // OpenStreetMap supports up to 18 reliably
+        MapType.SATELLITE -> 18  // Esri satellite supports up to 18 reliably
     }
 }
 
@@ -58,7 +67,7 @@ fun OpenStreetMapView(
     val tileManager = remember { OpenStreetMapTileManager(context) }
 
     // --- Enhanced State Management ---
-    var zoom by remember { mutableStateOf(18) }
+    var zoom by remember { mutableStateOf(18) }  // Initial zoom level (will be validated per map type)
     var tileX by remember { mutableStateOf(0.0) }
     var tileY by remember { mutableStateOf(0.0) }
     var digitalZoom by remember { mutableStateOf(1f) }
@@ -73,6 +82,15 @@ fun OpenStreetMapView(
     // Add cleanup when mapType changes
     LaunchedEffect(mapType) {
         tileCache = emptyMap()
+        
+        // Validate zoom level for the new map type
+        val maxTileZoom = getMaxZoomForMapType(mapType)
+        if (zoom > maxTileZoom) {
+            zoom = maxTileZoom
+            digitalZoom = 1f
+            digitalZoomIndicator = false
+            Timber.d("📍 Adjusted zoom level to $maxTileZoom for ${mapType.displayName}")
+        }
     }
 
     // --- Drag State for Continuous Loading ---
@@ -116,6 +134,14 @@ fun OpenStreetMapView(
     LaunchedEffect(tileX, tileY, zoom, mapType) {
         // Skip tile loading if paused (during digital zoom)
         if (isTileLoadingPaused) {
+            return@LaunchedEffect
+        }
+        
+        // Validate zoom level for current map type
+        val maxTileZoom = getMaxZoomForMapType(mapType)
+        if (zoom > maxTileZoom) {
+            // Don't try to load tiles beyond the supported zoom level
+            Timber.d("📍 Skipping tile loading - zoom level $zoom exceeds max tile zoom $maxTileZoom for ${mapType.displayName}")
             return@LaunchedEffect
         }
         
@@ -183,14 +209,19 @@ fun OpenStreetMapView(
         if (isDragging && !isTileLoadingPaused) {
             try {
                 val (dragTileX, dragTileY) = lastDragPosition
-                val bufferSize = tileManager.getBufferSizeBasedOnConnection()
-                val (visibleTiles, _) = tileManager.getTilesForViewWithPriority(dragTileX, dragTileY, zoom, 800, 800, mapType, bufferSize)
+                val maxTileZoom = getMaxZoomForMapType(mapType)
+                
+                // Only load tiles if zoom level is within limits
+                if (zoom <= maxTileZoom) {
+                    val bufferSize = tileManager.getBufferSizeBasedOnConnection()
+                    val (visibleTiles, _) = tileManager.getTilesForViewWithPriority(dragTileX, dragTileY, zoom, 800, 800, mapType, bufferSize)
 
-                if (visibleTiles.isNotEmpty()) {
-                    val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
+                    if (visibleTiles.isNotEmpty()) {
+                        val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
 
-                    if (isActive) {
-                        tileCache = tileCache + visibleCache
+                        if (isActive) {
+                            tileCache = tileCache + visibleCache
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -211,7 +242,8 @@ fun OpenStreetMapView(
                         change.consume()
                         
                         // Calculate drag sensitivity based on digital zoom
-                        val dragSensitivity = 1f / digitalZoom
+                        // When digital zoom increases, drag sensitivity should increase (not decrease)
+                        val dragSensitivity = digitalZoom
                         val adjustedDragAmount = Offset(
                             dragAmount.x * dragSensitivity,
                             dragAmount.y * dragSensitivity
@@ -231,8 +263,13 @@ fun OpenStreetMapView(
             }
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
+            // Calculate the center of the original canvas (before scaling)
+            val originalCenterX = size.width / 2f
+            val originalCenterY = size.height / 2f
+            
             withTransform({
-                scale(digitalZoom, digitalZoom, center)
+                // Scale around the center of the canvas
+                scale(digitalZoom, digitalZoom, Offset(originalCenterX, originalCenterY))
             }) {
                 val mapWidth = size.width / digitalZoom
                 val mapHeight = size.height / digitalZoom
@@ -243,6 +280,7 @@ fun OpenStreetMapView(
                 val tileOffsetX = (fractionalTileX * TILE_SIZE).toFloat()
                 val tileOffsetY = (fractionalTileY * TILE_SIZE).toFloat()
 
+                // The center in the scaled coordinate system
                 val centerX = mapWidth / 2f
                 val centerY = mapHeight / 2f
 
@@ -255,7 +293,7 @@ fun OpenStreetMapView(
                     }
                 }
 
-                // --- Draw Location Pin ---
+                // --- Draw Location Pin (always at the center) ---
                 val pinColor = Color.Red
                 drawCircle(color = pinColor, radius = 15f / digitalZoom, center = Offset(centerX, centerY))
                 drawCircle(color = Color.White, radius = 3f / digitalZoom, center = Offset(centerX, centerY))
@@ -295,7 +333,8 @@ fun OpenStreetMapView(
         Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = 130.dp, end = 16.dp)) {
             IconButton(
                 onClick = {
-                    if (zoom < MAX_ZOOM_LEVEL) {
+                    val maxTileZoom = getMaxZoomForMapType(mapType)
+                    if (zoom < maxTileZoom) {
                         val newZoom = zoom + 1
                         val (currentLat, currentLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
                         val (newTileX, newTileY) = tileManager.latLngToTileXY(currentLat, currentLng, newZoom)
@@ -306,6 +345,7 @@ fun OpenStreetMapView(
                         digitalZoomIndicator = false
                         onLocationSelected(MapLocation(currentLat, currentLng))
                     } else {
+                        // Use digital zoom when tile zoom limit is reached
                         val maxDigitalZoom = getMaxDigitalZoomForDevice()
                         if (digitalZoom < maxDigitalZoom) {
                             digitalZoom = min(digitalZoom * DIGITAL_ZOOM_STEP, maxDigitalZoom)

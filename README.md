@@ -58,6 +58,35 @@
 
 ---
 
+## ✨ Latest Features (v2.1.0)
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="50%">
+        <strong>🔄 Manual Update Check</strong><br>
+        <em>Check for app updates anytime from the Help screen with real-time status feedback and "Up to Date" indicators</em>
+      </td>
+      <td align="center" width="50%">
+        <strong>🔗 GitHub Integration</strong><br>
+        <em>Direct access to source code, bug reporting, and releases with proper GitHub icons and external links</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>📊 Enhanced Download Experience</strong><br>
+        <em>Native download manager with progress bars, cancel/retry options, and automatic installation prompting</em>
+      </td>
+      <td align="center">
+        <strong>📱 Professional Help Center</strong><br>
+        <em>Comprehensive help screen with app information, version tracking, and integrated support resources</em>
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
 ## 📱 App Screenshots
 
 <div align="center">
@@ -91,9 +120,9 @@
         <em>Ensure accurate compass readings</em>
       </td>
       <td align="center">
-        <img src="assets/images/screenshots/Trobleshooting Guide.jpg" alt="Troubleshooting Guide" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>Troubleshooting Guide</strong><br>
-        <em>Get help when you need it</em>
+        <img src="assets/images/screenshots/Help and Support.jpg" alt="Help and Support Screen" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <br><strong>Help & Support</strong><br>
+        <em>Check for updates, access GitHub, and get help</em>
       </td>
     </tr>
   </table>
@@ -241,6 +270,8 @@ flowchart TD
 - **📱 AR Camera Mode**: Real-time camera guidance with directional arrows
 - **🧭 Compass Calibration**: Interactive calibration for accuracy
 - **📐 Phone Detection**: Adapts guidance based on phone orientation
+- **🔄 Smart Updates**: Manual update checking with native download experience
+- **🔗 GitHub Integration**: Direct access to source code, issues, and releases
 
 ---
 

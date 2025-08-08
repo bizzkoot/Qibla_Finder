@@ -148,3 +148,6 @@ Keystore_Setup.md
 
 # Backup directories
 backup_*/
+
+# Gemini-specific files
+GEMINI.md

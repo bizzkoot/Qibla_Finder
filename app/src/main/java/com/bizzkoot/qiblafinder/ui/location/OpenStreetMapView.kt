@@ -241,9 +241,8 @@ fun OpenStreetMapView(
                     onDrag = { change, dragAmount ->
                         change.consume()
                         
-                        // Calculate drag sensitivity based on digital zoom
-                        // When digital zoom increases, drag sensitivity should increase (not decrease)
-                        val dragSensitivity = digitalZoom
+                        // When digital zoom increases, drag sensitivity should decrease.
+                        val dragSensitivity = 1f / digitalZoom
                         val adjustedDragAmount = Offset(
                             dragAmount.x * dragSensitivity,
                             dragAmount.y * dragSensitivity
@@ -263,47 +262,41 @@ fun OpenStreetMapView(
             }
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Calculate the center of the original canvas (before scaling)
-            val originalCenterX = size.width / 2f
-            val originalCenterY = size.height / 2f
-            
-            withTransform({
-                // Scale around the center of the canvas
-                scale(digitalZoom, digitalZoom, Offset(originalCenterX, originalCenterY))
-            }) {
-                val mapWidth = size.width / digitalZoom
-                val mapHeight = size.height / digitalZoom
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
 
+            withTransform({
+                scale(digitalZoom, digitalZoom, pivot = Offset(centerX, centerY))
+            }) {
                 val fractionalTileX = tileX - floor(tileX)
                 val fractionalTileY = tileY - floor(tileY)
 
                 val tileOffsetX = (fractionalTileX * TILE_SIZE).toFloat()
                 val tileOffsetY = (fractionalTileY * TILE_SIZE).toFloat()
 
-                // The center in the scaled coordinate system
-                val centerX = mapWidth / 2f
-                val centerY = mapHeight / 2f
+                // Center point of the canvas, this is where the pin is
+                val canvasCenter = Offset(size.width / 2f, size.height / 2f)
 
                 tileCache.forEach { (cacheKey, bitmap) ->
                     val tile = parseTileCacheKey(cacheKey)
                     if (tile != null && tile.mapType == mapType) {
-                        val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE - tileOffsetX + centerX
-                        val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE - tileOffsetY + centerY
+                        val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE - tileOffsetX + canvasCenter.x
+                        val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE - tileOffsetY + canvasCenter.y
                         drawImage(bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
                     }
                 }
-
-                // --- Draw Location Pin (always at the center) ---
-                val pinColor = Color.Red
-                drawCircle(color = pinColor, radius = 15f / digitalZoom, center = Offset(centerX, centerY))
-                drawCircle(color = Color.White, radius = 3f / digitalZoom, center = Offset(centerX, centerY))
-
-                // --- Draw Accuracy Circle ---
-                val accuracyInMeters = getAccuracyForZoomWithDigitalZoom(zoom, digitalZoom)
-                val accuracyInPixels = tileManager.metersToPixels(accuracyInMeters.toFloat(), zoom)
-                drawCircle(color = Color.Red.copy(alpha = 0.1f), radius = accuracyInPixels, center = Offset(centerX, centerY))
-                drawCircle(color = Color.Red, radius = accuracyInPixels, center = Offset(centerX, centerY), style = Stroke(width = 2f / digitalZoom))
             }
+
+            // --- Draw Location Pin (always at the center of the screen) ---
+            val pinColor = Color.Red
+            drawCircle(color = pinColor, radius = 15f, center = Offset(centerX, centerY))
+            drawCircle(color = Color.White, radius = 3f, center = Offset(centerX, centerY))
+
+            // --- Draw Accuracy Circle (around the pin) ---
+            val accuracyInMeters = getAccuracyForZoomWithDigitalZoom(zoom, digitalZoom)
+            val accuracyInPixels = tileManager.metersToPixels(accuracyInMeters.toFloat(), zoom) * digitalZoom
+            drawCircle(color = Color.Red.copy(alpha = 0.1f), radius = accuracyInPixels, center = Offset(centerX, centerY))
+            drawCircle(color = Color.Red, radius = accuracyInPixels, center = Offset(centerX, centerY), style = Stroke(width = 2f))
         }
 
         if (isLoading && tileCache.isEmpty()) {

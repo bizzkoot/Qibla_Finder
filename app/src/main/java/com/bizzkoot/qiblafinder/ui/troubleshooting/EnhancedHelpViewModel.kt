@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bizzkoot.qiblafinder.update.repositories.UpdateNotificationRepository
+import com.bizzkoot.qiblafinder.update.services.EnhancedDownloadManager
+import com.bizzkoot.qiblafinder.update.services.DownloadState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,11 +16,16 @@ import java.util.*
 
 class EnhancedHelpViewModel(
     private val context: Context,
-    private val updateRepository: UpdateNotificationRepository
+    private val updateRepository: UpdateNotificationRepository,
+    private val downloadManager: EnhancedDownloadManager,
+    private val onUpdateFound: (() -> Unit)? = null
 ) : ViewModel() {
     
     private val _updateCheckState = MutableStateFlow(UpdateCheckState())
     val updateCheckState: StateFlow<UpdateCheckState> = _updateCheckState.asStateFlow()
+    
+    // Download state for in-Help screen downloads
+    val downloadState: StateFlow<DownloadState> = downloadManager.downloadState
     
     init {
         initializeState()
@@ -60,6 +67,8 @@ class EnhancedHelpViewModel(
                         newVersion = updateInfo.newVersion,
                         lastChecked = currentTime
                     )
+                    // Trigger main screen download banner
+                    onUpdateFound?.invoke()
                 } else {
                     _updateCheckState.value = _updateCheckState.value.copy(
                         isChecking = false,
@@ -91,5 +100,41 @@ class EnhancedHelpViewModel(
         // Implement SharedPreferences storage here
         // For now, just log
         Timber.d("Last check time saved: $time")
+    }
+    
+    // Download functionality for Help screen
+    fun downloadUpdate() {
+        viewModelScope.launch {
+            try {
+                val updateInfo = updateRepository.checkForUpdates(forceCheck = false)
+                if (updateInfo != null) {
+                    downloadManager.startDownload(
+                        downloadUrl = updateInfo.downloadUrl,
+                        fileName = "qibla-finder-${updateInfo.newVersion}.apk",
+                        versionName = updateInfo.newVersion
+                    )
+                    Timber.d("Download started from Help screen")
+                } else {
+                    Timber.w("No update info available for download")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to start download from Help screen")
+            }
+        }
+    }
+    
+    fun cancelDownload() {
+        downloadManager.cancelDownload()
+        Timber.d("Download cancelled from Help screen")
+    }
+    
+    fun installUpdate() {
+        val currentDownloadState = downloadState.value
+        if (currentDownloadState is DownloadState.Completed) {
+            downloadManager.installApk(currentDownloadState.fileUri)
+            Timber.d("Install triggered from Help screen with fileUri: ${currentDownloadState.fileUri}")
+        } else {
+            Timber.w("Cannot install: download not completed. Current state: $currentDownloadState")
+        }
     }
 }

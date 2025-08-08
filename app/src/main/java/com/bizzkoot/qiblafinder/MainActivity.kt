@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val updateUiState by updateNotificationViewModel.uiState.collectAsState()
                     Box(modifier = Modifier.fillMaxSize()) {
-                        QiblaApp()
+                        QiblaApp(updateNotificationViewModel, enhancedDownloadManager)
                         if (updateUiState.showNotification) {
                             updateUiState.updateInfo?.let { updateInfo ->
                                 EnhancedUpdateNotificationBanner(
@@ -86,7 +86,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun QiblaApp() {
+fun QiblaApp(
+    updateNotificationViewModel: UpdateNotificationViewModel,
+    enhancedDownloadManager: EnhancedDownloadManager
+) {
     val context = LocalContext.current
     val permissionManager = remember { PermissionManager(context) }
     val permissionState by permissionManager.permissionState.collectAsState()
@@ -124,11 +127,13 @@ fun QiblaApp() {
         
         val appState = rememberQiblaAppState()
         
-        QiblaNavHost(
-            navController = appState.navController,
-            sharedLocationRepository = sharedLocationRepository,
-            sharedSensorRepository = sharedSensorRepository
-        )
+                                QiblaNavHost(
+                            navController = appState.navController,
+                            sharedLocationRepository = sharedLocationRepository,
+                            sharedSensorRepository = sharedSensorRepository,
+                            updateNotificationViewModel = updateNotificationViewModel,
+                            enhancedDownloadManager = enhancedDownloadManager
+                        )
     }
 }
 

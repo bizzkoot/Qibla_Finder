@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bizzkoot.qiblafinder.ui.icons.GitHub
 import com.bizzkoot.qiblafinder.utils.GitHubUtils
+import com.bizzkoot.qiblafinder.update.services.DownloadState
 
 data class TroubleshootingItem(
     val title: String,
@@ -31,6 +32,7 @@ fun EnhancedTroubleshootingScreen(
 ) {
     val context = LocalContext.current
     val updateCheckState by viewModel.updateCheckState.collectAsState()
+    val downloadState by viewModel.downloadState.collectAsState()
     
     val troubleshootingItems = listOf(
         TroubleshootingItem(
@@ -132,7 +134,11 @@ fun EnhancedTroubleshootingScreen(
             item {
                 AppInformationCard(
                     updateCheckState = updateCheckState,
-                    onCheckForUpdates = { viewModel.checkForUpdates() }
+                    downloadState = downloadState,
+                    onCheckForUpdates = { viewModel.checkForUpdates() },
+                    onDownload = { viewModel.downloadUpdate() },
+                    onCancel = { viewModel.cancelDownload() },
+                    onInstall = { viewModel.installUpdate() }
                 )
             }
             
@@ -176,7 +182,11 @@ fun EnhancedTroubleshootingScreen(
 @Composable
 fun AppInformationCard(
     updateCheckState: UpdateCheckState,
-    onCheckForUpdates: () -> Unit
+    downloadState: com.bizzkoot.qiblafinder.update.services.DownloadState,
+    onCheckForUpdates: () -> Unit,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onInstall: () -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -316,7 +326,209 @@ fun AppInformationCard(
                     }
                 }
             }
+            
+            // Download Section - Only show when update is available
+            if (updateCheckState.hasUpdate) {
+                Spacer(modifier = Modifier.height(16.dp))
+                UpdateDownloadSection(
+                    downloadState = downloadState,
+                    newVersion = updateCheckState.newVersion,
+                    onDownload = onDownload,
+                    onCancel = onCancel,
+                    onInstall = onInstall
+                )
+            }
         }
+    }
+}
+
+@Composable
+fun UpdateDownloadSection(
+    downloadState: DownloadState,
+    newVersion: String?,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onInstall: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = when (downloadState) {
+                        is DownloadState.Downloading -> Icons.Default.CloudDownload
+                        is DownloadState.Completed -> Icons.Default.CheckCircle
+                        is DownloadState.Error -> Icons.Default.Error
+                        else -> Icons.Default.Download
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (downloadState) {
+                        is DownloadState.Downloading -> "Downloading Update..."
+                        is DownloadState.Completed -> "Update Ready to Install"
+                        is DownloadState.Error -> "Download Failed"
+                        else -> "🎉 Ready to Update!"
+                    },
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+            
+            newVersion?.let { version ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Version $version is available",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            
+            // Progress indicator for downloading
+            if (downloadState is DownloadState.Downloading) {
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                val progress = if (downloadState.totalBytes > 0) {
+                    downloadState.bytesDownloaded.toFloat() / downloadState.totalBytes.toFloat()
+                } else 0f
+                
+                LinearProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                    )
+                    
+                    Text(
+                        text = "${formatBytes(downloadState.bytesDownloaded)} / ${formatBytes(downloadState.totalBytes)}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            
+            // Error message
+            if (downloadState is DownloadState.Error) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = downloadState.message,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                when (downloadState) {
+                    is DownloadState.Idle, is DownloadState.Error -> {
+                        Button(
+                            onClick = onDownload,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (downloadState is DownloadState.Error) "Retry" else "Download")
+                        }
+                    }
+                    
+                    is DownloadState.Downloading -> {
+                        Button(
+                            onClick = onCancel,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Cancel,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cancel")
+                        }
+                    }
+                    
+                    is DownloadState.Completed -> {
+                        Button(
+                            onClick = onInstall,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.InstallMobile,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Install")
+                        }
+                    }
+                    
+                    is DownloadState.Cancelled -> {
+                        Button(
+                            onClick = onDownload,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Download")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Helper function for formatting bytes
+private fun formatBytes(bytes: Long): String {
+    val kb = bytes / 1024.0
+    val mb = kb / 1024.0
+    
+    return when {
+        mb >= 1 -> String.format("%.1f MB", mb)
+        kb >= 1 -> String.format("%.1f KB", kb)
+        else -> "$bytes B"
     }
 }
 

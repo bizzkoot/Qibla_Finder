@@ -33,6 +33,8 @@ fun QiblaNavHost(
     navController: NavHostController,
     sharedLocationRepository: LocationRepository,
     sharedSensorRepository: SensorRepository,
+    updateNotificationViewModel: com.bizzkoot.qiblafinder.update.viewmodel.UpdateNotificationViewModel,
+    enhancedDownloadManager: com.bizzkoot.qiblafinder.update.services.EnhancedDownloadManager,
     modifier: Modifier = Modifier
 ) {
     Timber.d("🎯 QiblaNavHost - Using shared repositories: LocationRepository=$sharedLocationRepository, SensorRepository=$sharedSensorRepository")
@@ -205,7 +207,12 @@ fun QiblaNavHost(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
                     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                         @Suppress("UNCHECKED_CAST")
-                        return com.bizzkoot.qiblafinder.ui.troubleshooting.EnhancedHelpViewModel(context, app.updateNotificationRepository) as T
+                        return com.bizzkoot.qiblafinder.ui.troubleshooting.EnhancedHelpViewModel(
+                            context = context, 
+                            updateRepository = app.updateNotificationRepository,
+                            downloadManager = enhancedDownloadManager,
+                            onUpdateFound = { updateNotificationViewModel.checkForUpdates(forceCheck = true) }
+                        ) as T
                     }
                 }
             )

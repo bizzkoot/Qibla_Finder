@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -85,7 +87,17 @@ class EnhancedDownloadManager(private val context: Context) {
             addAction(DownloadManager.ACTION_NOTIFICATION_CLICKED)
         }
         
-        context.registerReceiver(downloadReceiver, filter)
+        // Android 14+ requires explicit export specification for dynamic receivers
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.registerReceiver(
+                context, 
+                downloadReceiver, 
+                filter, 
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            context.registerReceiver(downloadReceiver, filter)
+        }
     }
     
     private fun handleDownloadComplete(downloadId: Long) {

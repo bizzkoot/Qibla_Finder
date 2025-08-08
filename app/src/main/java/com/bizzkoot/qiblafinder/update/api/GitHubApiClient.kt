@@ -58,6 +58,8 @@ private fun GitHubRelease.toReleaseInfo(): ReleaseInfo? {
 }
 
 private fun extractVersionCode(versionName: String): Int {
+    // Parse semantic version and convert to versionCode
+    // Format: major * 10000 + minor * 100 + patch
     val parts = versionName.split(".")
     return when {
         parts.size >= 3 -> {
@@ -72,7 +74,8 @@ private fun extractVersionCode(versionName: String): Int {
             major * 10000 + minor * 100
         }
         else -> {
-            parts[0].toIntOrNull() ?: 0
+            val major = parts[0].toIntOrNull() ?: 0
+            major * 10000
         }
     }
 }

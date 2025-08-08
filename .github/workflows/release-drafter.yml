@@ -66,7 +66,9 @@ jobs:
           fi
           
           NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
-          NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+          # Calculate versionCode based on semantic version to maintain consistency
+          # Format: major * 10000 + minor * 100 + patch
+          NEW_VERSION_CODE=$((NEW_MAJOR * 10000 + NEW_MINOR * 100 + NEW_PATCH))
           
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "current_version_code=$CURRENT_VERSION_CODE" >> $GITHUB_OUTPUT

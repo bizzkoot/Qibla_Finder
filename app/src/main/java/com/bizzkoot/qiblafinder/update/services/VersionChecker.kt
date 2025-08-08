@@ -42,6 +42,17 @@ class VersionChecker(
     private fun isNewerVersion(currentVersion: PackageInfo, latestRelease: ReleaseInfo): Boolean {
         @Suppress("DEPRECATION")
         val currentVersionCode = currentVersion.versionCode
-        return latestRelease.versionCode > currentVersionCode
+        val latestVersionCode = latestRelease.versionCode
+        
+        Timber.d("Version comparison: current=$currentVersionCode (${currentVersion.versionName}) vs latest=$latestVersionCode (${latestRelease.versionName})")
+        
+        val isNewer = latestVersionCode > currentVersionCode
+        if (isNewer) {
+            Timber.d("New version detected: ${latestRelease.versionName} (code: $latestVersionCode) > ${currentVersion.versionName} (code: $currentVersionCode)")
+        } else {
+            Timber.d("No new version: ${latestRelease.versionName} (code: $latestVersionCode) <= ${currentVersion.versionName} (code: $currentVersionCode)")
+        }
+        
+        return isNewer
     }
 }

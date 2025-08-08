@@ -22,7 +22,7 @@ import com.bizzkoot.qiblafinder.ui.ar.ARScreen
 import com.bizzkoot.qiblafinder.ui.ar.ARViewModel
 import com.bizzkoot.qiblafinder.ui.location.ManualLocationScreen
 import com.bizzkoot.qiblafinder.ui.location.ManualLocationViewModel
-import com.bizzkoot.qiblafinder.ui.troubleshooting.TroubleshootingScreen
+
 import timber.log.Timber
 
 /**
@@ -198,9 +198,20 @@ fun QiblaNavHost(
 
 
         composable(QiblaAppState.TROUBLESHOOTING_ROUTE) {
-            Timber.d("🎯 QiblaNavHost - Troubleshooting screen composable called")
-            TroubleshootingScreen(
-                onBackPressed = { navController.popBackStack() }
+            Timber.d("🎯 QiblaNavHost - Enhanced Troubleshooting screen composable called")
+            val context = LocalContext.current
+            val app = context.applicationContext as com.bizzkoot.qiblafinder.QiblaFinderApplication
+            val enhancedHelpViewModel: com.bizzkoot.qiblafinder.ui.troubleshooting.EnhancedHelpViewModel = viewModel(
+                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        @Suppress("UNCHECKED_CAST")
+                        return com.bizzkoot.qiblafinder.ui.troubleshooting.EnhancedHelpViewModel(context, app.updateNotificationRepository) as T
+                    }
+                }
+            )
+            com.bizzkoot.qiblafinder.ui.troubleshooting.EnhancedTroubleshootingScreen(
+                onBackPressed = { navController.popBackStack() },
+                viewModel = enhancedHelpViewModel
             )
         }
     }

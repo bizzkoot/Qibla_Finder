@@ -276,16 +276,16 @@ flowchart TD
 ## 📚 Documentation
 
 ### **For Developers**
-- [**🚀 Git Push Guide**](GIT_PUSH_GUIDE.md) - Complete guide for pushing changes and triggering releases
-- [**📝 Commit Conventions**](COMMIT_CONVENTIONS.md) - How to write commit messages for automated versioning
-- [**🎯 Release Guide**](RELEASE_GUIDE.md) - Understanding the automated release system
-- [**🔧 GitHub Steps**](GitHub_Steps.md) - GitHub setup and configuration
-- [**📊 Progress Tracking**](Progress.md) - Development progress and roadmap
+- [**🚀 Git Push Guide**](docs/guides/GIT_PUSH_GUIDE.md) - Complete guide for pushing changes and triggering releases
+- [**📝 Commit Conventions**](docs/development/COMMIT_CONVENTIONS.md) - How to write commit messages for automated versioning
+- [**🎯 Release Guide**](docs/guides/RELEASE_GUIDE.md) - Understanding the automated release system
+- [**🔧 GitHub Steps**](docs/guides/GitHub_Steps.md) - GitHub setup and configuration
+- [**📊 Progress Tracking**](docs/development/Progress.md) - Development progress and roadmap
 
 ### **For Users**
-- [**🔍 Troubleshooting Guide**](Troubleshooting.md) - Common issues and solutions
-- [**⚙️ Technical Details**](Technical.md) - Technical implementation details
-- [**🎨 UX Design**](UX.md) - User experience design principles
+- [**🔍 Troubleshooting Guide**](docs/technical/Troubleshooting.md) - Common issues and solutions
+- [**⚙️ Technical Details**](docs/technical/Technical.md) - Technical implementation details
+- [**🎨 UX Design**](docs/technical/UX.md) - User experience design principles
 
 ---
 
@@ -326,7 +326,7 @@ flowchart TD
 
 - **🐛 Found a bug?** [Open an issue](https://github.com/bizzkoot/Qibla_Finder/issues)
 - **💡 Have a suggestion?** [Request a feature](https://github.com/bizzkoot/Qibla_Finder/issues)
-- **❓ Need help?** Check the [Troubleshooting Guide](Troubleshooting.md)
+- **❓ Need help?** Check the [Troubleshooting Guide](docs/technical/Troubleshooting.md)
 - **📧 Questions?** Open a GitHub issue
 
 ---

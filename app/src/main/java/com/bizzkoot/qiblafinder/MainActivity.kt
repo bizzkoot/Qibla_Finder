@@ -24,17 +24,21 @@ import com.bizzkoot.qiblafinder.navigation.rememberQiblaAppState
 import com.bizzkoot.qiblafinder.permissions.PermissionManager
 import com.bizzkoot.qiblafinder.ui.permissions.PermissionScreen
 import com.bizzkoot.qiblafinder.update.ui.UpdateNotificationBanner
+import com.bizzkoot.qiblafinder.update.ui.EnhancedUpdateNotificationBanner
+import com.bizzkoot.qiblafinder.update.services.EnhancedDownloadManager
 import com.bizzkoot.qiblafinder.update.viewmodel.UpdateNotificationViewModel
 import timber.log.Timber
 
 class MainActivity : ComponentActivity() {
+    
+    private lateinit var enhancedDownloadManager: EnhancedDownloadManager
 
     private val updateNotificationViewModel: UpdateNotificationViewModel by viewModels {
         object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val app = application as QiblaFinderApplication
                 @Suppress("UNCHECKED_CAST")
-                return UpdateNotificationViewModel(app.updateNotificationRepository) as T
+                return UpdateNotificationViewModel(app.updateNotificationRepository, enhancedDownloadManager) as T
             }
         }
     }
@@ -42,6 +46,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Initialize enhanced download manager
+        enhancedDownloadManager = EnhancedDownloadManager(this)
+        
         Timber.d("🎯 MainActivity - onCreate() called")
         setContent {
             QiblaFinderTheme {
@@ -54,18 +62,14 @@ class MainActivity : ComponentActivity() {
                         QiblaApp()
                         if (updateUiState.showNotification) {
                             updateUiState.updateInfo?.let { updateInfo ->
-                                UpdateNotificationBanner(
+                                EnhancedUpdateNotificationBanner(
                                     modifier = Modifier.align(Alignment.BottomCenter),
                                     updateInfo = updateInfo,
+                                    downloadState = updateUiState.downloadState,
                                     onDismiss = { updateNotificationViewModel.dismissUpdate() },
-                                    onDownload = {
-                                        updateNotificationViewModel.downloadUpdate()
-                                        updateUiState.downloadUrl?.let { url ->
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                            startActivity(intent)
-                                            updateNotificationViewModel.onDownloadInitiated()
-                                        }
-                                    }
+                                    onDownload = { updateNotificationViewModel.downloadUpdate() },
+                                    onCancel = { updateNotificationViewModel.cancelDownload() },
+                                    onInstall = { updateNotificationViewModel.installUpdate() }
                                 )
                             }
                         }
@@ -73,6 +77,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        // The DownloadManager handles cleanup automatically
     }
 }
 

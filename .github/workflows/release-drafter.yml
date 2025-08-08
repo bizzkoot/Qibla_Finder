@@ -42,17 +42,21 @@ jobs:
           PATCH=${VERSION_PARTS[2]}
           
           # Determine bump type based on commit message
-          if echo "$COMMIT_MSG" | grep -q "breaking\|major"; then
+          # Only check the first line (commit type) for version bump keywords
+          COMMIT_TYPE=$(echo "$COMMIT_MSG" | head -n1 | cut -d'(' -f1)
+          COMMIT_SCOPE=$(echo "$COMMIT_MSG" | head -n1 | sed -n 's/.*(\([^)]*\)).*/\1/p')
+          
+          if echo "$COMMIT_TYPE" | grep -q "breaking\|major"; then
             NEW_MAJOR=$((MAJOR + 1))
             NEW_MINOR=0
             NEW_PATCH=0
             BUMP_TYPE="major"
-          elif echo "$COMMIT_MSG" | grep -q "feat\|feature\|enhancement"; then
+          elif echo "$COMMIT_TYPE" | grep -q "feat\|feature\|enhancement"; then
             NEW_MAJOR=$MAJOR
             NEW_MINOR=$((MINOR + 1))
             NEW_PATCH=0
             BUMP_TYPE="minor"
-          elif echo "$COMMIT_MSG" | grep -q "fix\|bug\|patch"; then
+          elif echo "$COMMIT_TYPE" | grep -q "fix\|bug\|patch"; then
             NEW_MAJOR=$MAJOR
             NEW_MINOR=$MINOR
             NEW_PATCH=$((PATCH + 1))

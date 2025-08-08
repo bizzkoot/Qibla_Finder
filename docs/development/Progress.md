@@ -4,37 +4,37 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 1: Core Functionality ✅ COMPLETED
 
-*   [x] Implement MVVM Architecture ([Technical.md](Technical.md))
+*   [x] Implement MVVM Architecture ([Technical.md](../technical/Technical.md))
     - ✅ Implemented with CompassViewModel, SunCalibrationViewModel, ARViewModel
     - ✅ Proper dependency injection with ViewModel factories
-*   [x] Set up Location & Geodesy Module ([Technical.md](Technical.md))
+*   [x] Set up Location & Geodesy Module ([Technical.md](../technical/Technical.md))
     - ✅ LocationRepository with FusedLocationProviderClient
     - ✅ GeodesyUtils with accurate Qibla bearing and distance calculations
     - ✅ Real GPS location with accuracy tracking (HIGH/MEDIUM/LOW)
-*   [x] Develop Orientation Engine ([Technical.md](Technical.md))
+*   [x] Develop Orientation Engine ([Technical.md](../technical/Technical.md))
     - ✅ SensorRepository with orientation tracking and compass status monitoring
     - ✅ True North correction (basic implementation)
     - ✅ Compass calibration with figure-8 pattern detection
-*   [x] Build Main Compass View UI ([UX.md](UX.md))
+*   [x] Build Main Compass View UI ([UX.md](../technical/UX.md))
     - ✅ CompassScreen with animated compass graphic
     - ✅ Status bar with location and compass status
     - ✅ Location info with distance to Kaaba
     - ✅ Professional Material Design 3 styling
-*   [x] Implement State Management ([Technical.md](Technical.md))
+*   [x] Implement State Management ([Technical.md](../technical/Technical.md))
     - ✅ Using Kotlin Coroutines & Flow for reactive state management
     - ✅ Proper state encapsulation in data classes
 
 ## Phase 2: Sun Calibration Feature ✅ COMPLETED (BETA)
 
-*   [x] Integrate CameraX and Astronomical Library ([SunCalibration.md](SunCalibration.md))
+*   [x] Integrate CameraX and Astronomical Library ([SunCalibration.md](../technical/SunCalibration.md))
     - ✅ CameraX integration with proper lifecycle management
     - ✅ Astronomical library for sun position calculations
     - ✅ Real-time camera preview with error handling
-*   [x] Implement Sun Position Calculation ([SunCalibration.md](SunCalibration.md))
+*   [x] Implement Sun Position Calculation ([SunCalibration.md](../technical/SunCalibration.md))
     - ✅ SunPositionRepository with accurate calculations
     - ✅ Real-time sun azimuth and elevation tracking
     - ✅ Sun visibility detection based on location and time
-*   [x] Develop Sun Calibration UI and Flow ([SunCalibration.md](SunCalibration.md), [UX.md](UX.md))
+*   [x] Develop Sun Calibration UI and Flow ([SunCalibration.md](../technical/SunCalibration.md), [UX.md](../technical/UX.md))
     - ✅ Sophisticated SunCalibrationScreen with camera preview
     - ✅ Interactive sun position visualization
     - ✅ Professional calibration controls and error handling
@@ -43,15 +43,15 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 3: AR View Enhancement ✅ COMPLETED
 
-*   [x] Integrate ARCore and Sceneform/Filament ([AR.md](AR.md))
+*   [x] Integrate ARCore and Sceneform/Filament ([AR.md](../technical/AR.md))
     - ✅ ARCore integration with proper session management
     - ✅ Sceneform for 3D rendering and anchor placement
     - ✅ Professional error handling and fallback options
-*   [x] Implement AR Session and Anchor Placement ([AR.md](AR.md))
+*   [x] Implement AR Session and Anchor Placement ([AR.md](../technical/AR.md))
     - ✅ AR session initialization and configuration
     - ✅ Anchor placement with touch interaction
     - ✅ Proper lifecycle management and resource cleanup
-*   [x] Develop AR View UI and User Guidance ([AR.md](AR.md), [UX.md](UX.md))
+*   [x] Develop AR View UI and User Guidance ([AR.md](../technical/AR.md), [UX.md](../technical/UX.md))
     - ✅ ARErrorScreen with contextual error messages
     - ✅ Professional error handling for different scenarios
     - ✅ Helpful tips and fallback options
@@ -63,17 +63,17 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 4: Advanced Features ✅ COMPLETED
 
-*   [x] Implement Compass Calibration ([Technical.md](Technical.md))
+*   [x] Implement Compass Calibration ([Technical.md](../technical/Technical.md))
     - ✅ Interactive figure-8 calibration with animation
     - ✅ Real-time progress tracking based on device movement
     - ✅ Smart movement detection and progress calculation
     - ✅ Professional calibration overlay with Material Design 3
-*   [x] Implement Permission Management ([Technical.md](Technical.md))
+*   [x] Implement Permission Management ([Technical.md](../technical/Technical.md))
     - ✅ Runtime permission handling for location and camera
     - ✅ PermissionScreen with clear explanations
     - ✅ Graceful degradation when permissions are denied
     - ✅ Professional permission request flow
-*   [x] Implement Interference Detection ([Technical.md](Technical.md))
+*   [x] Implement Interference Detection ([Technical.md](../technical/Technical.md))
     - ✅ Magnetic field monitoring for interference detection
     - ✅ CompassStatus tracking (OK, NEEDS_CALIBRATION, INTERFERENCE)
     - ✅ Real-time status updates in UI
@@ -81,15 +81,15 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 5: Polish & UX Refinement ✅ COMPLETED
 
-*   [x] Distance Calculation ([Technical.md](Technical.md))
+*   [x] Distance Calculation ([Technical.md](../technical/Technical.md))
     - ✅ Real distance to Kaaba using Haversine formula
     - ✅ Dynamic updates as location changes
     - ✅ Professional display in kilometers
-*   [x] Error Handling & Recovery ([Technical.md](Technical.md))
+*   [x] Error Handling & Recovery ([Technical.md](../technical/Technical.md))
     - ✅ Comprehensive error handling throughout the app
     - ✅ Graceful fallbacks for all failure scenarios
     - ✅ User-friendly error messages with actionable solutions
-*   [x] Professional UI/UX ([UX.md](UX.md))
+*   [x] Professional UI/UX ([UX.md](../technical/UX.md))
     - ✅ Material Design 3 compliance throughout
     - ✅ Smooth animations and transitions
     - ✅ Responsive layout for different screen sizes
@@ -97,18 +97,18 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 6: Compass & Qibla Direction Fixes ✅ COMPLETED
 
-*   [x] Fix Compass Axis Orientation Issues ([Technical.md](Technical.md))
+*   [x] Fix Compass Axis Orientation Issues ([Technical.md](../technical/Technical.md))
     - ✅ Fixed coordinate system remapping for compass applications
     - ✅ Corrected azimuth calculation and UI coordinate system
     - ✅ Resolved 90-degree offset issue in compass display
     - ✅ Fixed jittery behavior when phone is flat
-*   [x] Improve Qibla Direction UI ([UX.md](UX.md))
+*   [x] Improve Qibla Direction UI ([UX.md](../technical/UX.md))
     - ✅ Implemented clear arrow alignment system (red = target, blue = current)
     - ✅ Added visual feedback with green circle when aligned
     - ✅ Added 🕋 Kaaba logo at 12 o'clock when Qibla is found
     - ✅ Clear instructions: "Align blue arrow with red arrow, then face 12 o'clock"
     - ✅ Success message: "✅ Qibla Found! Face this direction to pray"
-*   [x] Fix Calibration Progress Issues ([Technical.md](Technical.md))
+*   [x] Fix Calibration Progress Issues ([Technical.md](../technical/Technical.md))
     - ✅ Resolved calibration getting stuck at 60%
     - ✅ Improved movement detection algorithm
     - ✅ Better progress calculation based on meaningful movements
@@ -116,17 +116,17 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 7: Phone Orientation & GPS Accuracy ✅ COMPLETED
 
-*   [x] Implement Phone Orientation Detection ([Technical.md](Technical.md))
+*   [x] Implement Phone Orientation Detection ([Technical.md](../technical/Technical.md))
     - ✅ Real-time phone tilt angle calculation using accelerometer
     - ✅ Flat detection (75°-105° tilt range)
     - ✅ Vertical detection (0°-15° and 165°-180° tilt range)
     - ✅ Reversed axis logic to match device sensor setup
-*   [x] Add RED ALERT System ([UX.md](UX.md))
+*   [x] Add RED ALERT System ([UX.md](../technical/UX.md))
     - ✅ Red alert overlay when phone is in wrong orientation
     - ✅ Clear warning message: "Please lay your phone FLAT"
     - ✅ Real-time tilt angle display for user feedback
     - ✅ Professional alert UI with warning icon and card design
-*   [x] Implement GPS Accuracy Validation ([Technical.md](Technical.md))
+*   [x] Implement GPS Accuracy Validation ([Technical.md](../technical/Technical.md))
     - ✅ GPS accuracy monitoring (≤10m for prayer accuracy)
     - ✅ Green checkmark icon when accuracy is sufficient
     - ✅ Color-coded accuracy levels (Green/Orange/Red)
@@ -135,7 +135,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 8: Advanced Features ✅ COMPLETED
 
-*   [x] Create Manual Location Adjustment View ([UX.md](UX.md))
+*   [x] Create Manual Location Adjustment View ([UX.md](../technical/UX.md))
     - ✅ Navigation and UI structure implemented
     - ✅ Custom map view with grid pattern and draggable pin
     - ✅ Zoom controls and accuracy circle display
@@ -144,7 +144,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
     - ✅ **FIXED**: Enhanced drag gesture handling with better coordinate conversion
     - ✅ **FIXED**: Added visual feedback for dragging state
     - ✅ **FIXED**: Improved map background and pin visualization
-*   [x] Build In-App Troubleshooting Guide based on [Troubleshooting.md](Troubleshooting.md)
+*   [x] Build In-App Troubleshooting Guide based on [Troubleshooting.md](../technical/Troubleshooting.md)
     - ✅ Comprehensive troubleshooting section with 5 main categories
     - ✅ Expandable cards with symptoms and solutions
     - ✅ Step-by-step problem resolution guides
@@ -152,7 +152,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
 
 ## Phase 9: Bug Fixes & Stability Improvements ✅ COMPLETED
 
-*   [x] Fix AR Crashes ([AR.md](AR.md))
+*   [x] Fix AR Crashes ([AR.md](../technical/AR.md))
     - ✅ Simplified AR lifecycle management
     - ✅ Improved error handling and session management
     - ✅ Fixed TransformableNode constructor issues
@@ -171,7 +171,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
         - 📍 North and Qibla direction markers
         - ➕ Floating action button to place AR markers
         - 📊 Real-time direction display in degrees
-*   [x] Fix Manual Location Map Issues ([UX.md](UX.md))
+*   [x] Fix Manual Location Map Issues ([UX.md](../technical/UX.md))
     - ✅ Improved Canvas rendering with proper background
     - ✅ Enhanced drag gesture handling with zoom-aware coordinate conversion
     - ✅ Added visual feedback for dragging state (blue pin when dragging)
@@ -203,7 +203,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
 ## Phase 10: Critical Bug Fixes & AR Enhancement ✅ COMPLETED
 
 ### **Step 1: Fix Manual Location Map Rendering** ✅ COMPLETED
-*   [x] **CRITICAL ISSUE: UI/Data State Mismatch** ([UX.md](UX.md))
+*   [x] **CRITICAL ISSUE: UI/Data State Mismatch** ([UX.md](../technical/UX.md))
     - [x] **PROBLEM**: User confirms navigation to Manual Location screen works (shows "Manual Location Adjustment" title)
     - [x] **PROBLEM**: But logs show NO activity from ManualLocationViewModel or ManualLocationScreen
     - [x] **PROBLEM**: This indicates the UI navigates but the ViewModel isn't being initialized
@@ -217,7 +217,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
         - ✅ Fixed Timber import and logging calls
     - [x] **TESTING**: Verify ManualLocationViewModel logs appear when screen is entered
     - [x] **CONFIRMATION**: Both UI navigation AND ViewModel initialization work together
-*   [x] **CRITICAL ISSUE: Navigation State Not Switching** ([UX.md](UX.md))
+*   [x] **CRITICAL ISSUE: Navigation State Not Switching** ([UX.md](../technical/UX.md))
     - [x] **PROBLEM**: App was in "SINGLE SCREEN TEST" mode bypassing normal navigation
     - [x] **PROBLEM**: Manual Location screen showed "Loading map..." indefinitely
     - [x] **PROBLEM**: No logs appeared from ManualLocationViewModel
@@ -229,7 +229,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
         - ✅ Added comprehensive logging throughout the navigation pipeline
     - [x] **TESTING**: Navigate to Manual Location, verify compass logs stop and Manual Location logs start
     - [x] **CONFIRMATION**: App properly switches from compass state to Manual Location state
-*   [x] **CRITICAL ISSUE: GPS Location Not Being Passed** ([Technical.md](Technical.md))
+*   [x] **CRITICAL ISSUE: GPS Location Not Being Passed** ([Technical.md](../technical/Technical.md))
     - [x] **PROBLEM**: Manual Location screen cannot access GPS location from compass screen
     - [x] **PROBLEM**: LocationRepository state not being shared between screens
     - [x] **PROBLEM**: Manual Location falls back to Kuala Lumpur coordinates instead of actual GPS
@@ -241,21 +241,21 @@ This document tracks the development progress of the Qibla Finder app. Each task
         - ✅ Improved error handling and user feedback
     - [x] **TESTING**: Verify Manual Location uses actual GPS coordinates (3.318747,101.595681)
     - [x] **CONFIRMATION**: Map loads with user's actual location instead of fallback
-*   [x] **Diagnose Map Loading Issue** ([UX.md](UX.md))
+*   [x] **Diagnose Map Loading Issue** ([UX.md](../technical/UX.md))
     - [x] Analyzed current map rendering logic in SimpleMapView.kt
     - [x] Checked location state handling in ManualLocationViewModel.kt
     - [x] Verified GPS location acquisition vs fallback logic
     - [x] Enhanced ManualLocationScreen with better loading states and error handling
     - [x] **TESTING**: Install APK, navigate to Manual Location, observe map behavior
     - [x] **CONFIRMATION**: Map should show actual terrain/content, not just loading spinner
-*   [x] **Fix GPS Location Acquisition** ([Technical.md](Technical.md))
+*   [x] **Fix GPS Location Acquisition** ([Technical.md](../technical/Technical.md))
     - [x] Enhanced ManualLocationViewModel to use actual GPS location from shared repository
     - [x] Implemented proper timeout handling (5 seconds) for location acquisition
     - [x] Added fallback to Kuala Lumpur coordinates when GPS fails
     - [x] Improved error messages and user feedback
     - [x] **TESTING**: Verify GPS coordinates are used instead of fallback
     - [x] **CONFIRMATION**: Map should load with user's actual location
-*   [x] **Fix Map Canvas Rendering** ([UX.md](UX.md))
+*   [x] **Fix Map Canvas Rendering** ([UX.md](../technical/UX.md))
     - [x] Verified Canvas drawing in SimpleMapView.kt is working properly
     - [x] Ensured proper background rendering with terrain visualization
     - [x] Fixed coordinate system and zoom functionality
@@ -264,15 +264,15 @@ This document tracks the development progress of the Qibla Finder app. Each task
     - [x] **CONFIRMATION**: User can see map content and drag location pin
 
 ### **Step 2: Implement & Refine OpenStreetMap View** ✅ COMPLETED
-*   [✅] **User Feedback Analysis & Initial Implementation** ([UX.md](UX.md))
+*   [✅] **User Feedback Analysis & Initial Implementation** ([UX.md](../technical/UX.md))
     - [✅] **USER REQUEST**: Implement a real map system instead of synthetic boxes.
     - [✅] **SOLUTION**: Implemented OpenStreetMap with a smart caching system.
     - [✅] **CREATED**: `OpenStreetMapTileManager.kt` and `OpenStreetMapView.kt`.
-*   [✅] **Fix GPS Location & State Management** ([Technical.md](Technical.md))
+*   [✅] **Fix GPS Location & State Management** ([Technical.md](../technical/Technical.md))
     - [✅] **PROBLEM**: Map was not using live GPS data and state was not preserved.
     - [✅] **SOLUTION**: Implemented a stateful `ManualLocationViewModel` that fetches location once, and passed the confirmed location back to the compass via a navigation result.
     - [✅] **RESULT**: Manual location is correctly initialized and overrides the compass location when confirmed.
-*   [✅] **Fix Map Dragging & "Snap-Back" Issue ("Tile Space" Refactor)** ([UX.md](UX.md))
+*   [✅] **Fix Map Dragging & "Snap-Back" Issue ("Tile Space" Refactor)** ([UX.md](../technical/UX.md))
     - [✅] **PROBLEM**: Dragging the map was imprecise and caused a visual "snap-back" upon release.
     - [✅] **SOLUTION**: Refactored the entire map view to operate in a precise "tile space" coordinate system instead of using inaccurate pixel-to-degree approximations.
     - [✅] **ADDED**: `latLngToTileXY` and `tileXYToLatLng` conversion functions for high-precision calculations.
@@ -280,33 +280,33 @@ This document tracks the development progress of the Qibla Finder app. Each task
     - [✅] **RESULT**: The map dragging is now perfectly smooth with no "snap-back" effect. The visual state and data state are always in sync.
 
 ### **Step 3: Implement Simplified AR Enhancement** ✅ COMPLETED
-*   [✅] **Add Camera Preview to AR Screen** ([AR.md](AR.md))
+*   [✅] **Add Camera Preview to AR Screen** ([AR.md](../technical/AR.md))
     - [✅] Integrate CameraX preview in ARScreen.kt
     - [✅] Ensure camera feed is visible behind UI overlay
     - [✅] Add proper camera permissions and lifecycle management
     - [✅] **CONFIRMATION**: User can see real camera view with directional UI
-*   [✅] **Implement Compass Sensor Integration** ([Technical.md](Technical.md))
+*   [✅] **Implement Compass Sensor Integration** ([Technical.md](../technical/Technical.md))
     - [✅] Add compass sensor reading to AR screen via ARViewModel
     - [✅] Calculate real-time phone orientation and Qibla direction
     - [✅] Map compass data to Qibla direction with proper angle calculation
     - [✅] **CONFIRMATION**: Direction arrow responds to phone rotation
-*   [✅] **Add Flat Phone Detection** ([UX.md](UX.md))
+*   [✅] **Add Flat Phone Detection** ([UX.md](../technical/UX.md))
     - [✅] Implement accelerometer-based flat detection in AR
     - [✅] Use same logic as compass screen for consistency
     - [✅] **CONFIRMATION**: Phone orientation detection works reliably
-*   [✅] **Create Simplified Directional UI** ([UX.md](UX.md))
+*   [✅] **Create Simplified Directional UI** ([UX.md](../technical/UX.md))
     - [✅] Design clear arrow pointing to Qibla direction
     - [✅] Add 🕋 Kaaba icon and status indicators
     - [✅] Include clear instructions: "Face this direction to pray"
     - [✅] **CONFIRMATION**: User can easily follow the direction to pray
 
 ### **Step 4: AR Implementation Validation** ✅ COMPLETED
-*   [✅] **Verify AR Core Functionality** ([AR.md](AR.md))
+*   [✅] **Verify AR Core Functionality** ([AR.md](../technical/AR.md))
     - [✅] ARCore integration with proper session management
     - [✅] Camera preview working behind UI overlay
     - [✅] Compass sensor integration for real-time direction
     - [✅] **CONFIRMATION**: AR screen provides clear directional guidance
-*   [✅] **Test AR User Experience** ([UX.md](UX.md))
+*   [✅] **Test AR User Experience** ([UX.md](../technical/UX.md))
     - [✅] Verify camera feed is visible behind UI
     - [✅] Test phone rotation - arrow should move
     - [✅] Test flat phone detection
@@ -316,7 +316,7 @@ This document tracks the development progress of the Qibla Finder app. Each task
 ## Phase 11: Compass Core Refactoring ✅ COMPLETED
 
 *   [x] **Implement Compass Core Refactor Plan**
-    - [x] **Details**: Executed the full refactoring plan outlined in [COMPASS_CORE_REFACTOR_V2.md](COMPASS_CORE_REFACTOR_V2.md).
+    - [x] **Details**: Executed the full refactoring plan outlined in [COMPASS_CORE_REFACTOR_V2.md](../technical/COMPASS_CORE_REFACTOR_V2.md).
     - [x] **Action**: Switched from manual sensor fusion to `Sensor.TYPE_ROTATION_VECTOR`.
     - [x] **Action**: Simplified `SensorRepository` by removing complex figure-8 detection logic.
     - [x] **Action**: Refactored `CompassViewModel` to handle a new hybrid (automatic and manual) calibration flow.

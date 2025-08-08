@@ -145,3 +145,6 @@ desktop.ini
 GitHub_Secrets_Setup.md
 SIGNED_APK_SUMMARY.md
 Keystore_Setup.md
+
+# Backup directories
+backup_*/

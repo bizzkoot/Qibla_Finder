@@ -269,7 +269,7 @@ For support and questions, please open an issue on GitHub.
 
 ## 📊 Development Progress
 
-See [Progress.md](Progress.md) for detailed development progress and feature status.
+See [Progress.md](../development/Progress.md) for detailed development progress and feature status.
 ```
 
 ## 🔐 Step 5: Configure Repository Settings

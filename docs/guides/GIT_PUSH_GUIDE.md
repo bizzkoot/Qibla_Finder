@@ -194,7 +194,7 @@ git push --force-with-lease origin main
 - Permission issues
 
 **Solutions:**
-1. Check [GitHub Secrets Setup](GitHub_Secrets_Setup_Secure.md)
+1. Check [GitHub Secrets Setup](../security/GitHub_Secrets_Setup_Secure.md)
 2. Verify all secrets are configured
 3. Review build logs for specific errors
 
@@ -285,10 +285,10 @@ git push origin feature/digital-zoom
 
 ## 📚 Related Documentation
 
-- [Commit Conventions](COMMIT_CONVENTIONS.md) - Detailed commit message guidelines
+- [Commit Conventions](../development/COMMIT_CONVENTIONS.md) - Detailed commit message guidelines
 - [Release Guide](RELEASE_GUIDE.md) - Complete release system explanation
 - [GitHub Steps](GitHub_Steps.md) - GitHub setup and configuration
-- [GitHub Secrets Setup](GitHub_Secrets_Setup_Secure.md) - Security configuration
+- [GitHub Secrets Setup](../security/GitHub_Secrets_Setup_Secure.md) - Security configuration
 
 ## 🆘 Support
 

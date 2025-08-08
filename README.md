@@ -1,7 +1,7 @@
 # 🕋 Qibla Finder
 
 <div align="center">
-  <img src="master_icon.png" alt="Qibla Finder Icon" width="150" height="150">
+  <img src="assets/images/master_icon.png" alt="Qibla Finder Icon" width="150" height="150">
   <br>
   <h2><em>Find your direction to the Kaaba with precision and ease</em></h2>
   
@@ -64,34 +64,34 @@
   <table>
     <tr>
       <td align="center">
-        <img src="Screenshot/Compass with GPS.jpg" alt="Main Compass with GPS" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="assets/images/screenshots/Compass with GPS.jpg" alt="Main Compass with GPS" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Main Compass</strong><br>
         <em>Find your direction using GPS location</em>
       </td>
       <td align="center">
-        <img src="Screenshot/AR.jpg" alt="Augmented Reality Mode" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="assets/images/screenshots/AR.jpg" alt="Augmented Reality Mode" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>AR Camera Mode</strong><br>
         <em>Point your camera for real-time guidance</em>
       </td>
       <td align="center">
-        <img src="Screenshot/Compass with Manual Location.jpg" alt="Manual Location Setting" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="assets/images/screenshots/Compass with Manual Location.jpg" alt="Manual Location Setting" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Manual Location</strong><br>
         <em>Set your location when GPS is unavailable</em>
       </td>
     </tr>
     <tr>
       <td align="center">
-        <img src="Screenshot/Manual Location Adjustment.jpg" alt="Location Adjustment" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="assets/images/screenshots/Manual Location Adjustment.jpg" alt="Location Adjustment" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Location Adjustment</strong><br>
         <em>Fine-tune your position on the map</em>
       </td>
       <td align="center">
-        <img src="Screenshot/Calibrate Compass.jpg" alt="Compass Calibration" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="assets/images/screenshots/Calibrate Compass.jpg" alt="Compass Calibration" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Compass Calibration</strong><br>
         <em>Ensure accurate compass readings</em>
       </td>
       <td align="center">
-        <img src="Screenshot/Trobleshooting Guide.jpg" alt="Troubleshooting Guide" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="assets/images/screenshots/Trobleshooting Guide.jpg" alt="Troubleshooting Guide" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
         <br><strong>Troubleshooting Guide</strong><br>
         <em>Get help when you need it</em>
       </td>

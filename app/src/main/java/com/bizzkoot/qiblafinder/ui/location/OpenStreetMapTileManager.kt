@@ -21,6 +21,18 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.UnknownHostException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+
+sealed class TileLoadState {
+    object Loading : TileLoadState()
+    data class LowRes(val bitmap: Bitmap) : TileLoadState()
+    data class HighRes(val bitmap: Bitmap) : TileLoadState()
+    data class Failed(val error: String) : TileLoadState()
+}
 
 class OpenStreetMapTileManager(private val context: Context) {
 
@@ -368,15 +380,54 @@ class OpenStreetMapTileManager(private val context: Context) {
     /**
      * Get lower resolution tile for progressive loading
      */
-    fun getLowerResolutionTile(tile: TileCoordinate): TileCoordinate? {
-        return if (tile.zoom > 10) {
-            val lowerZoom = tile.zoom - 1
-            val scale = 2.0.pow(tile.zoom - lowerZoom)
-            val lowerX = (tile.x / scale).toInt()
-            val lowerY = (tile.y / scale).toInt()
-            TileCoordinate(lowerX, lowerY, lowerZoom, tile.mapType)
-        } else null
+    fun getLowerResolutionTile(tile: TileCoordinate, zoomOffset: Int = 2): TileCoordinate? {
+        val lowerZoom = tile.zoom - zoomOffset
+        if (lowerZoom < 2) return null // Or your minimum supported zoom
+
+        val scale = 2.0.pow(zoomOffset)
+        val lowerX = floor(tile.x / scale).toInt()
+        val lowerY = floor(tile.y / scale).toInt()
+
+        return TileCoordinate(lowerX, lowerY, lowerZoom, tile.mapType)
     }
+
+    /**
+     * Loads a tile progressively, emitting low-resolution and then high-resolution bitmaps.
+     * @param tile The target high-resolution tile to load.
+     * @return A Flow that emits the various states of the tile loading process.
+     */
+    fun loadTileProgressively(tile: TileCoordinate): Flow<TileLoadState> = flow {
+        emit(TileLoadState.Loading)
+
+        // Coroutine scope for concurrent downloads
+        coroutineScope {
+            // Launch high-resolution download in the background
+            val highResDeferred = async {
+                getTileBitmap(tile) // Your existing function to get a tile from cache or download
+            }
+
+            // Attempt to load low-resolution tile first
+            val lowerResTile = getLowerResolutionTile(tile)
+            if (lowerResTile != null) {
+                val lowResBitmap = getTileBitmap(lowerResTile)
+                if (lowResBitmap != null) {
+                    emit(TileLoadState.LowRes(lowResBitmap))
+                }
+            }
+
+            // Await the high-resolution result
+            val highResBitmap = highResDeferred.await()
+            if (highResBitmap != null) {
+                emit(TileLoadState.HighRes(highResBitmap))
+            } else {
+                // Only emit Failed if we haven't already provided a LowRes version
+                // This prevents the UI from showing an error if a placeholder is already visible
+                emit(TileLoadState.Failed("Failed to load high-res tile."))
+            }
+        }
+    }.catch { e ->
+        emit(TileLoadState.Failed(e.message ?: "Unknown error"))
+    }.flowOn(Dispatchers.IO)
 
     /**
      * Get tiles needed for a map view (original method for backward compatibility)
@@ -507,30 +558,7 @@ class OpenStreetMapTileManager(private val context: Context) {
         }
     }
 
-    /**
-     * Load tile progressively (low-res first, then high-res)
-     */
-    suspend fun loadTileProgressive(tile: TileCoordinate): Bitmap? {
-        // Try to get the tile directly first
-        val directTile = getTileBitmap(tile)
-        if (directTile != null) {
-            return directTile
-        }
-
-        // For satellite tiles, try lower resolution first
-        if (tile.mapType == MapType.SATELLITE) {
-            val lowerResTile = getLowerResolutionTile(tile)
-            if (lowerResTile != null) {
-                val lowerResBitmap = getTileBitmap(lowerResTile)
-                if (lowerResBitmap != null) {
-                    return lowerResBitmap
-                }
-            }
-        }
-
-        // Fallback to direct loading
-        return getTileBitmap(tile)
-    }
+    
 
     /**
      * Batch download multiple tiles simultaneously

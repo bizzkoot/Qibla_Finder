@@ -137,7 +137,6 @@ fun ManualLocationScreen(
                         viewModel.updateTileInfo(tileCount, cacheSizeMB)
                     },
                     mapType = uiState.selectedMapType,
-                    onMapTypeFallback = { newMapType -> viewModel.updateMapType(newMapType) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

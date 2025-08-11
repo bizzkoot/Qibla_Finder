@@ -60,7 +60,6 @@ fun OpenStreetMapView(
     onAccuracyChanged: (Int) -> Unit,
     onTileInfoChanged: (Int, Double) -> Unit = { _, _ -> },
     mapType: MapType = MapType.STREET,
-    onMapTypeFallback: (MapType) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -75,13 +74,13 @@ fun OpenStreetMapView(
     var digitalZoomIndicator by remember { mutableStateOf(false) }
 
     // --- Tile Cache & Loading State ---
-    var tileCache by remember(mapType) { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    var tileStateCache by remember(mapType) { mutableStateOf<Map<String, TileLoadState>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
 
     // Add cleanup when mapType changes
     LaunchedEffect(mapType) {
-        tileCache = emptyMap()
+        tileStateCache = emptyMap()
         
         // Validate zoom level for the new map type
         val maxTileZoom = getMaxZoomForMapType(mapType)
@@ -136,7 +135,7 @@ fun OpenStreetMapView(
         if (isTileLoadingPaused) {
             return@LaunchedEffect
         }
-        
+
         // Validate zoom level for current map type
         val maxTileZoom = getMaxZoomForMapType(mapType)
         if (zoom > maxTileZoom) {
@@ -144,7 +143,7 @@ fun OpenStreetMapView(
             Timber.d("📍 Skipping tile loading - zoom level $zoom exceeds max tile zoom $maxTileZoom for ${mapType.displayName}")
             return@LaunchedEffect
         }
-        
+
         // Update accuracy first
         val accuracyMeters = getAccuracyForZoomWithDigitalZoom(zoom, digitalZoom)
         onAccuracyChanged(accuracyMeters)
@@ -158,76 +157,27 @@ fun OpenStreetMapView(
         if (!isActive) return@LaunchedEffect
         isLoading = true
         error = null
-        try {
-            val bufferSize = tileManager.getBufferSizeBasedOnConnection()
-            val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, mapType, bufferSize)
 
-            if (visibleTiles.isNotEmpty()) {
-                val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
+        val bufferSize = tileManager.getBufferSizeBasedOnConnection()
+        val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, mapType, bufferSize)
+        val allTiles = visibleTiles + bufferTiles
 
-                if (isActive) {
-                    tileCache = tileCache + visibleCache
-                    isLoading = false
-                }
-            } else {
-                isLoading = false
-            }
-
-            if (bufferTiles.isNotEmpty()) {
+        allTiles.forEach { tile ->
+            val cacheKey = tile.toCacheKey()
+            if (tileStateCache[cacheKey] !is TileLoadState.HighRes) {
                 launch {
-                    try {
-                        val bufferCache = tileManager.batchDownloadTiles(bufferTiles, batchSize = 5)
-
-                        if (isActive) {
-                            tileCache = tileCache + bufferCache
-                        }
-                    } catch (e: Exception) {
-                        Timber.e(e, "📍 Error loading buffer tiles")
+                    tileManager.loadTileProgressively(tile).collect { state ->
+                        tileStateCache = tileStateCache + (cacheKey to state)
                     }
                 }
             }
-        } catch (e: Exception) {
-            if (isActive) {
-                val fallbackMapType = MapTypeFallbackManager.getFallbackMapType(mapType, e)
-                if (fallbackMapType != mapType) {
-                    onMapTypeFallback(fallbackMapType)
-                } else {
-                    error = "Failed to load ${mapType.displayName.lowercase()} map: ${e.message}"
-                    isLoading = false
-                }
-            }
         }
+        isLoading = false
     }
 
     // Update tile info when cache changes
-    LaunchedEffect(tileCache) {
-        onTileInfoChanged(tileCache.size, tileManager.getCacheSizeMB(mapType))
-    }
-
-    // Continuous tile loading during drag
-    LaunchedEffect(isDragging, lastDragPosition) {
-        if (isDragging && !isTileLoadingPaused) {
-            try {
-                val (dragTileX, dragTileY) = lastDragPosition
-                val maxTileZoom = getMaxZoomForMapType(mapType)
-                
-                // Only load tiles if zoom level is within limits
-                if (zoom <= maxTileZoom) {
-                    val bufferSize = tileManager.getBufferSizeBasedOnConnection()
-                    val (visibleTiles, _) = tileManager.getTilesForViewWithPriority(dragTileX, dragTileY, zoom, 800, 800, mapType, bufferSize)
-
-                    if (visibleTiles.isNotEmpty()) {
-                        val visibleCache = tileManager.batchDownloadTiles(visibleTiles, batchSize = 3)
-
-                        if (isActive) {
-                            tileCache = tileCache + visibleCache
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "📍 Error loading tiles during drag")
-            }
-        }
+    LaunchedEffect(tileStateCache) {
+        onTileInfoChanged(tileStateCache.size, tileManager.getCacheSizeMB(mapType))
     }
 
     Box(
@@ -277,12 +227,39 @@ fun OpenStreetMapView(
                 // Center point of the canvas, this is where the pin is
                 val canvasCenter = Offset(size.width / 2f, size.height / 2f)
 
-                tileCache.forEach { (cacheKey, bitmap) ->
+                tileStateCache.forEach { (cacheKey, state) ->
                     val tile = parseTileCacheKey(cacheKey)
                     if (tile != null && tile.mapType == mapType) {
                         val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE - tileOffsetX + canvasCenter.x
                         val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE - tileOffsetY + canvasCenter.y
-                        drawImage(bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+
+                        when (state) {
+                            is TileLoadState.Loading -> {
+                                // Optional: Draw a placeholder rectangle
+                                drawRect(
+                                    color = Color.LightGray,
+                                    topLeft = Offset(drawX, drawY),
+                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE, TILE_SIZE)
+                                )
+                            }
+                            is TileLoadState.LowRes -> {
+                                // Draw the low-res bitmap, it will be scaled up by the canvas transform
+                                drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+                            }
+                            is TileLoadState.HighRes -> {
+                                // Draw the final, sharp high-res bitmap
+                                drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+                            }
+                            is TileLoadState.Failed -> {
+                                // Optional: Draw an error indicator
+                                drawRect(
+                                    color = Color.Gray,
+                                    topLeft = Offset(drawX, drawY),
+                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE, TILE_SIZE)
+                                )
+                                // You could also draw an 'X' or other indicator
+                            }
+                        }
                     }
                 }
             }
@@ -299,7 +276,7 @@ fun OpenStreetMapView(
             drawCircle(color = Color.Red, radius = accuracyInPixels, center = Offset(centerX, centerY), style = Stroke(width = 2f))
         }
 
-        if (isLoading && tileCache.isEmpty()) {
+        if (isLoading && tileStateCache.isEmpty()) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
 

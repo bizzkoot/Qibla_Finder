@@ -304,6 +304,21 @@ flowchart TD
 
 ---
 
+## 🧠 Design Decisions
+
+### Why is there no direction line on the manual map?
+
+We intentionally separate the task of *selecting a location* from *displaying the direction* for two key reasons: accuracy and user experience.
+
+1.  **Accuracy**: A straight line on a 2D map (like the one used for location selection) does not accurately represent the shortest path on the Earth's curved surface. Displaying such a line would be misleading.
+2.  **Clarity**: The map screen is for **input** (setting your location), while the compass screen is for **output** (showing the direction). This separation keeps the interface clean and easy to understand.
+
+The compass and AR views are the most precise tools for the final, real-world orientation.
+
+**[➡️ Read the full technical analysis here](docs/technical/MAP_DIRECTION_LINE_ANALYSIS.md)**
+
+---
+
 ## 📚 Documentation
 
 ### **For Developers**

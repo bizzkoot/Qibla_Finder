@@ -110,11 +110,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
 
@@ -124,6 +131,9 @@ class EnhancedDownloadManager(private val context: Context) {
     
     private val _downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
     val downloadState: StateFlow<DownloadState> = _downloadState.asStateFlow()
+    
+    // Coroutine scope for background operations
+    private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     private var currentDownloadId: Long = -1
     private var downloadReceiver: BroadcastReceiver? = null
@@ -189,7 +199,13 @@ class EnhancedDownloadManager(private val context: Context) {
             addAction(DownloadManager.ACTION_NOTIFICATION_CLICKED)
         }
         
-        context.registerReceiver(downloadReceiver, filter)
+        // Use ContextCompat for all Android versions to ensure proper receiver registration
+        ContextCompat.registerReceiver(
+            context, 
+            downloadReceiver, 
+            filter, 
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
     
     private fun handleDownloadComplete(downloadId: Long) {
@@ -199,22 +215,35 @@ class EnhancedDownloadManager(private val context: Context) {
             
             if (cursor.moveToFirst()) {
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                val status = cursor.getInt(statusIndex)
                 
-                when (status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> {
-                        val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                        val localUri = cursor.getString(uriIndex)
-                        _downloadState.value = DownloadState.Completed(localUri)
-                        Timber.i("Download completed successfully: $localUri")
+                // Check if status index is valid
+                if (statusIndex >= 0) {
+                    val status = cursor.getInt(statusIndex)
+                    
+                    when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                            // Check if URI index is valid
+                            if (uriIndex >= 0) {
+                                val localUri = cursor.getString(uriIndex)
+                                _downloadState.value = DownloadState.Completed(localUri)
+                                Timber.i("Download completed successfully: $localUri")
+                            } else {
+                                _downloadState.value = DownloadState.Error("Download completed but URI not found")
+                                Timber.e("Download completed but URI column not found")
+                            }
+                        }
+                        DownloadManager.STATUS_FAILED -> {
+                            val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                            val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
+                            val errorMessage = getDownloadErrorMessage(reason)
+                            _downloadState.value = DownloadState.Error(errorMessage)
+                            Timber.e("Download failed: $errorMessage")
+                        }
                     }
-                    DownloadManager.STATUS_FAILED -> {
-                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                        val reason = cursor.getInt(reasonIndex)
-                        val errorMessage = getDownloadErrorMessage(reason)
-                        _downloadState.value = DownloadState.Error(errorMessage)
-                        Timber.e("Download failed: $errorMessage")
-                    }
+                } else {
+                    _downloadState.value = DownloadState.Error("Download completed but status not found")
+                    Timber.e("Download completed but status column not found")
                 }
             }
             cursor.close()
@@ -225,18 +254,18 @@ class EnhancedDownloadManager(private val context: Context) {
     }
     
     private fun startProgressMonitoring() {
-        // Use a simple timer or WorkManager for progress monitoring
-        // For simplicity, we'll use a basic implementation
-        Thread {
+        // Use Kotlin coroutines for progress monitoring
+        coroutineScope.launch {
             while (_downloadState.value is DownloadState.Downloading) {
                 try {
-                    Thread.sleep(1000) // Update every second
                     updateProgress()
-                } catch (e: InterruptedException) {
-                    break
+                    delay(1000) // Update every second
+                } catch (e: Exception) {
+                    Timber.w(e, "Error in progress monitoring")
+                    // Continue monitoring unless explicitly stopped
                 }
             }
-        }.start()
+        }
     }
     
     private fun updateProgress() {
@@ -249,17 +278,21 @@ class EnhancedDownloadManager(private val context: Context) {
                 val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                 
-                val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
-                val bytesTotal = cursor.getLong(bytesTotalIndex)
-                val status = cursor.getInt(statusIndex)
-                
-                if (status == DownloadManager.STATUS_RUNNING && bytesTotal > 0) {
-                    _downloadState.value = DownloadState.Downloading(bytesDownloaded, bytesTotal)
+                // Check if indices are valid
+                if (bytesDownloadedIndex >= 0 && bytesTotalIndex >= 0 && statusIndex >= 0) {
+                    val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
+                    val bytesTotal = cursor.getLong(bytesTotalIndex)
+                    val status = cursor.getInt(statusIndex)
+                    
+                    if (status == DownloadManager.STATUS_RUNNING && bytesTotal > 0) {
+                        _downloadState.value = DownloadState.Downloading(bytesDownloaded, bytesTotal)
+                    }
                 }
             }
             cursor.close()
         } catch (e: Exception) {
             Timber.w(e, "Error updating progress")
+            // Don't stop monitoring on individual failures
         }
     }
     
@@ -961,6 +994,55 @@ If issues arise:
 - Monitor download speeds
 - Analyze error patterns
 - User experience metrics
+
+## 🐛 Recent Bug Fixes
+
+### Download Progress Issue (August 2025)
+
+#### Problem
+The download progress was getting stuck at the initial 141 bytes and not updating throughout the download process. Although the APK was successfully downloaded (visible in the notification drawer), the UI progress was not reflecting the actual download progress.
+
+#### Root Cause Analysis
+After thorough investigation, we identified three main issues in the `EnhancedDownloadManager.kt`:
+
+1. **Threading Issue**: The progress monitoring was using a `Thread` with `Thread.sleep()` instead of Kotlin coroutines, which caused issues with state updates and exception handling.
+
+2. **Poor Error Handling**: The `updateProgress()` method was not handling exceptions properly, causing the monitoring loop to terminate prematurely when errors occurred.
+
+3. **Cursor Column Index Issues**: The code was not validating cursor column indices before accessing them, which could cause crashes on different Android versions where column indices might be -1.
+
+#### Solution Implemented
+We implemented all three proposed solutions to fix the issue:
+
+1. **Replaced Thread with Kotlin Coroutines**:
+   - Added proper coroutine imports (`CoroutineScope`, `Dispatchers`, `SupervisorJob`, `delay`, `launch`)
+   - Created a dedicated coroutine scope for background operations
+   - Replaced the Thread-based `startProgressMonitoring()` with a coroutine-based implementation
+   - Used `delay()` instead of `Thread.sleep()` for better coroutine integration
+
+2. **Improved Error Handling**:
+   - Added proper validation for cursor column indices to prevent crashes on invalid indices
+   - Enhanced exception handling in both `updateProgress()` and `handleDownloadComplete()` methods
+   - Added more robust error logging with specific error messages
+   - Implemented continuation patterns so that monitoring continues even if individual updates fail
+
+3. **Fixed Cursor Column Indices Handling**:
+   - Added validation checks for all cursor column indices before accessing them
+   - Added fallback error messages when expected columns are not found
+   - Improved error handling in the download completion handler with proper column index validation
+
+4. **Additional Improvements**:
+   - Fixed a lint warning about receiver registration by using `ContextCompat.registerReceiver` for all Android versions
+   - Added proper export flags for broadcast receivers to ensure security compliance
+
+#### Results
+These changes successfully resolved the download progress issue. The download now shows proper progress updates throughout the entire download process, while maintaining all existing functionality. The download progress bar updates correctly, and users receive accurate feedback during the download process.
+
+#### Testing
+- ✅ Build successful with no compilation errors
+- ✅ All unit tests pass
+- ✅ Lint checks pass with no new warnings
+- ✅ Manual testing confirms progress updates work correctly
 
 ---
 

@@ -10,9 +10,14 @@ import android.os.Build
 import android.os.Environment
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
 
@@ -22,6 +27,9 @@ class EnhancedDownloadManager(private val context: Context) {
     
     private val _downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
     val downloadState: StateFlow<DownloadState> = _downloadState.asStateFlow()
+    
+    // Coroutine scope for background operations
+    private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     private var currentDownloadId: Long = -1
     private var downloadReceiver: BroadcastReceiver? = null
@@ -88,16 +96,12 @@ class EnhancedDownloadManager(private val context: Context) {
         }
         
         // Android 14+ requires explicit export specification for dynamic receivers
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.registerReceiver(
-                context, 
-                downloadReceiver, 
-                filter, 
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            context.registerReceiver(downloadReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            context, 
+            downloadReceiver, 
+            filter, 
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
     
     private fun handleDownloadComplete(downloadId: Long) {
@@ -107,22 +111,35 @@ class EnhancedDownloadManager(private val context: Context) {
             
             if (cursor.moveToFirst()) {
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                val status = cursor.getInt(statusIndex)
                 
-                when (status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> {
-                        val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                        val localUri = cursor.getString(uriIndex)
-                        _downloadState.value = DownloadState.Completed(localUri)
-                        Timber.i("Download completed successfully: $localUri")
+                // Check if status index is valid
+                if (statusIndex >= 0) {
+                    val status = cursor.getInt(statusIndex)
+                    
+                    when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                            // Check if URI index is valid
+                            if (uriIndex >= 0) {
+                                val localUri = cursor.getString(uriIndex)
+                                _downloadState.value = DownloadState.Completed(localUri)
+                                Timber.i("Download completed successfully: $localUri")
+                            } else {
+                                _downloadState.value = DownloadState.Error("Download completed but URI not found")
+                                Timber.e("Download completed but URI column not found")
+                            }
+                        }
+                        DownloadManager.STATUS_FAILED -> {
+                            val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                            val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
+                            val errorMessage = getDownloadErrorMessage(reason)
+                            _downloadState.value = DownloadState.Error(errorMessage)
+                            Timber.e("Download failed: $errorMessage")
+                        }
                     }
-                    DownloadManager.STATUS_FAILED -> {
-                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                        val reason = cursor.getInt(reasonIndex)
-                        val errorMessage = getDownloadErrorMessage(reason)
-                        _downloadState.value = DownloadState.Error(errorMessage)
-                        Timber.e("Download failed: $errorMessage")
-                    }
+                } else {
+                    _downloadState.value = DownloadState.Error("Download completed but status not found")
+                    Timber.e("Download completed but status column not found")
                 }
             }
             cursor.close()
@@ -133,17 +150,18 @@ class EnhancedDownloadManager(private val context: Context) {
     }
     
     private fun startProgressMonitoring() {
-        // Use a simple timer for progress monitoring
-        Thread {
+        // Use Kotlin coroutines for progress monitoring
+        coroutineScope.launch {
             while (_downloadState.value is DownloadState.Downloading) {
                 try {
-                    Thread.sleep(1000) // Update every second
                     updateProgress()
-                } catch (e: InterruptedException) {
-                    break
+                    delay(1000) // Update every second
+                } catch (e: Exception) {
+                    Timber.w(e, "Error in progress monitoring")
+                    // Continue monitoring unless explicitly stopped
                 }
             }
-        }.start()
+        }
     }
     
     private fun updateProgress() {
@@ -156,17 +174,21 @@ class EnhancedDownloadManager(private val context: Context) {
                 val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                 
-                val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
-                val bytesTotal = cursor.getLong(bytesTotalIndex)
-                val status = cursor.getInt(statusIndex)
-                
-                if (status == DownloadManager.STATUS_RUNNING && bytesTotal > 0) {
-                    _downloadState.value = DownloadState.Downloading(bytesDownloaded, bytesTotal)
+                // Check if indices are valid
+                if (bytesDownloadedIndex >= 0 && bytesTotalIndex >= 0 && statusIndex >= 0) {
+                    val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
+                    val bytesTotal = cursor.getLong(bytesTotalIndex)
+                    val status = cursor.getInt(statusIndex)
+                    
+                    if (status == DownloadManager.STATUS_RUNNING && bytesTotal > 0) {
+                        _downloadState.value = DownloadState.Downloading(bytesDownloaded, bytesTotal)
+                    }
                 }
             }
             cursor.close()
         } catch (e: Exception) {
             Timber.w(e, "Error updating progress")
+            // Don't stop monitoring on individual failures
         }
     }
     

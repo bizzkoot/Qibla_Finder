@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -40,7 +39,7 @@ class EnhancedDownloadManager(private val context: Context) {
         versionName: String
     ): Long {
         try {
-            // Clean up any existing download
+            // Clean up any existing download receiver
             cleanup()
             
             val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
@@ -79,6 +78,8 @@ class EnhancedDownloadManager(private val context: Context) {
                     DownloadManager.ACTION_DOWNLOAD_COMPLETE -> {
                         val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                         if (downloadId == currentDownloadId) {
+                            // Although updateProgress can now handle completion,
+                            // the receiver is faster and remains the primary mechanism.
                             handleDownloadComplete(downloadId)
                         }
                     }
@@ -95,7 +96,7 @@ class EnhancedDownloadManager(private val context: Context) {
             addAction(DownloadManager.ACTION_NOTIFICATION_CLICKED)
         }
         
-        // Android 14+ requires explicit export specification for dynamic receivers
+        // Android 14+ (API 34+) requires explicit export specification for dynamic receivers
         ContextCompat.registerReceiver(
             context, 
             downloadReceiver, 
@@ -105,90 +106,99 @@ class EnhancedDownloadManager(private val context: Context) {
     }
     
     private fun handleDownloadComplete(downloadId: Long) {
-        try {
-            val query = DownloadManager.Query().setFilterById(downloadId)
-            val cursor = downloadManager.query(query)
-            
+        val query = DownloadManager.Query().setFilterById(downloadId)
+        downloadManager.query(query)?.use { cursor -> // Use .use for automatic closing
             if (cursor.moveToFirst()) {
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                
-                // Check if status index is valid
-                if (statusIndex >= 0) {
-                    val status = cursor.getInt(statusIndex)
-                    
-                    when (status) {
-                        DownloadManager.STATUS_SUCCESSFUL -> {
-                            val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                            // Check if URI index is valid
-                            if (uriIndex >= 0) {
-                                val localUri = cursor.getString(uriIndex)
-                                _downloadState.value = DownloadState.Completed(localUri)
-                                Timber.i("Download completed successfully: $localUri")
-                            } else {
-                                _downloadState.value = DownloadState.Error("Download completed but URI not found")
-                                Timber.e("Download completed but URI column not found")
-                            }
-                        }
-                        DownloadManager.STATUS_FAILED -> {
-                            val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                            val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
-                            val errorMessage = getDownloadErrorMessage(reason)
-                            _downloadState.value = DownloadState.Error(errorMessage)
-                            Timber.e("Download failed: $errorMessage")
+                if (statusIndex < 0) {
+                    _downloadState.value = DownloadState.Error("Download completed but status column not found")
+                    Timber.e("Download completed but status column not found")
+                    return
+                }
+
+                val status = cursor.getInt(statusIndex)
+                when (status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                        if (uriIndex >= 0) {
+                            val localUri = cursor.getString(uriIndex)
+                            _downloadState.value = DownloadState.Completed(localUri)
+                            Timber.i("Download completed successfully: $localUri")
+                        } else {
+                            _downloadState.value = DownloadState.Error("Download completed but URI not found")
+                            Timber.e("Download completed but URI column not found")
                         }
                     }
-                } else {
-                    _downloadState.value = DownloadState.Error("Download completed but status not found")
-                    Timber.e("Download completed but status column not found")
+                    DownloadManager.STATUS_FAILED -> {
+                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                        val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
+                        val errorMessage = getDownloadErrorMessage(reason)
+                        _downloadState.value = DownloadState.Error(errorMessage)
+                        Timber.e("Download failed: $errorMessage")
+                    }
                 }
             }
-            cursor.close()
-        } catch (e: Exception) {
-            Timber.e(e, "Error handling download completion")
-            _downloadState.value = DownloadState.Error("Error processing download: ${e.message}")
         }
     }
     
     private fun startProgressMonitoring() {
-        // Use Kotlin coroutines for progress monitoring
         coroutineScope.launch {
+            // Loop as long as the state is Downloading. It will exit when the state
+            // becomes Completed, Error, or Cancelled.
             while (_downloadState.value is DownloadState.Downloading) {
                 try {
                     updateProgress()
                     delay(1000) // Update every second
                 } catch (e: Exception) {
-                    Timber.w(e, "Error in progress monitoring")
-                    // Continue monitoring unless explicitly stopped
+                    Timber.w(e, "Error in progress monitoring loop")
                 }
             }
         }
     }
     
+    /**
+     * [UPDATED] This function now checks for all relevant download statuses.
+     * This provides a reliable fallback to the BroadcastReceiver, ensuring the
+     * UI state is always updated correctly upon download completion or failure.
+     */
     private fun updateProgress() {
-        try {
-            val query = DownloadManager.Query().setFilterById(currentDownloadId)
-            val cursor = downloadManager.query(query)
-            
+        val query = DownloadManager.Query().setFilterById(currentDownloadId)
+        downloadManager.query(query)?.use { cursor -> // Use .use for automatic closing
             if (cursor.moveToFirst()) {
-                val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                
-                // Check if indices are valid
-                if (bytesDownloadedIndex >= 0 && bytesTotalIndex >= 0 && statusIndex >= 0) {
-                    val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
-                    val bytesTotal = cursor.getLong(bytesTotalIndex)
-                    val status = cursor.getInt(statusIndex)
-                    
-                    if (status == DownloadManager.STATUS_RUNNING && bytesTotal > 0) {
-                        _downloadState.value = DownloadState.Downloading(bytesDownloaded, bytesTotal)
+                if (statusIndex < 0) return // Cannot get status, exit
+
+                val status = cursor.getInt(statusIndex)
+                when (status) {
+                    DownloadManager.STATUS_RUNNING -> {
+                        val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+
+                        if (bytesDownloadedIndex >= 0 && bytesTotalIndex >= 0) {
+                            val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
+                            val bytesTotal = cursor.getLong(bytesTotalIndex)
+                            if (bytesTotal > 0) {
+                                _downloadState.value = DownloadState.Downloading(bytesDownloaded, bytesTotal)
+                            }
+                        }
+                    }
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        // The download is complete. Update progress to 100% and set state to Completed.
+                        // This acts as a fallback if the BroadcastReceiver is missed.
+                        val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        val totalBytes = if(bytesTotalIndex >= 0) cursor.getLong(bytesTotalIndex) else 0L
+                        _downloadState.value = DownloadState.Downloading(totalBytes, totalBytes)
+
+                        // Now, call the main completion handler to finalize the state.
+                        handleDownloadComplete(currentDownloadId)
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        // The download failed. Call the main completion handler to set the error state.
+                        // This also acts as a fallback.
+                        handleDownloadComplete(currentDownloadId)
                     }
                 }
             }
-            cursor.close()
-        } catch (e: Exception) {
-            Timber.w(e, "Error updating progress")
-            // Don't stop monitoring on individual failures
         }
     }
     
@@ -232,8 +242,8 @@ class EnhancedDownloadManager(private val context: Context) {
         downloadReceiver?.let { receiver ->
             try {
                 context.unregisterReceiver(receiver)
-            } catch (e: Exception) {
-                Timber.w(e, "Error unregistering receiver")
+            } catch (e: IllegalArgumentException) {
+                Timber.w(e, "Receiver not registered, skipping unregister.")
             }
         }
         downloadReceiver = null

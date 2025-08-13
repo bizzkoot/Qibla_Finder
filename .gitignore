@@ -151,3 +151,16 @@ backup_*/
 
 # Gemini-specific files
 GEMINI.md
+
+# Claude-specific files
+.claude/
+CLAUDE.md
+
+# Kiro-specific files
+.kiro/
+
+# Script files
+install-debug.sh
+
+# Specification files
+specs/

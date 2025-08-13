@@ -20,14 +20,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.*
 
 const val MAX_ZOOM_LEVEL = 19
 const val MAX_TILE_ZOOM_LEVEL = 18  // Maximum zoom level for tile downloads
@@ -60,10 +59,16 @@ fun OpenStreetMapView(
     onAccuracyChanged: (Int) -> Unit,
     onTileInfoChanged: (Int, Double) -> Unit = { _, _ -> },
     mapType: MapType = MapType.STREET,
+    showQiblaDirection: Boolean = true,
+    onQiblaLineNeedsRedraw: () -> Unit = {},
+    panelHeight: Int = 0,
+    selectedLocation: MapLocation? = null,
+    isMapTypeChanging: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val tileManager = remember { OpenStreetMapTileManager(context) }
+    val qiblaOverlay = remember { QiblaDirectionOverlay() }
 
     // --- Enhanced State Management ---
     var zoom by remember { mutableStateOf(18) }  // Initial zoom level (will be validated per map type)
@@ -77,10 +82,16 @@ fun OpenStreetMapView(
     var tileStateCache by remember(mapType) { mutableStateOf<Map<String, TileLoadState>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // --- Qibla Direction State ---
+    var qiblaDirectionState by remember { mutableStateOf(QiblaDirectionState()) }
 
     // Add cleanup when mapType changes
     LaunchedEffect(mapType) {
         tileStateCache = emptyMap()
+        
+        // Clear Qibla direction cache when map type changes
+        qiblaOverlay.clearCache()
         
         // Validate zoom level for the new map type
         val maxTileZoom = getMaxZoomForMapType(mapType)
@@ -130,10 +141,15 @@ fun OpenStreetMapView(
     }
 
     // --- Enhanced Tile Loading and Accuracy Calculation ---
-    LaunchedEffect(tileX, tileY, zoom, mapType) {
-        // Skip tile loading if paused (during digital zoom)
-        if (isTileLoadingPaused) {
+    LaunchedEffect(tileX, tileY, zoom, mapType, isDragging, isMapTypeChanging) {
+        // Skip tile loading if paused (during digital zoom) or during interactions
+        if (isTileLoadingPaused || isDragging) {
             return@LaunchedEffect
+        }
+        
+        // Reset tile cache when map type changes
+        if (isMapTypeChanging) {
+            tileStateCache = emptyMap()
         }
 
         // Validate zoom level for current map type
@@ -180,6 +196,30 @@ fun OpenStreetMapView(
         onTileInfoChanged(tileStateCache.size, tileManager.getCacheSizeMB(mapType))
     }
 
+    // --- Calculate Qibla Direction State ---
+    LaunchedEffect(selectedLocation, tileX, tileY, zoom, digitalZoom, showQiblaDirection, isDragging) {
+        if (showQiblaDirection) {
+            // Calculate viewport bounds for efficient path clipping
+            val viewportBounds = calculateViewportBounds(tileX, tileY, zoom, 800, 800)
+            
+            // Enable high-performance mode during dragging or high digital zoom
+            val isHighPerformanceMode = isDragging || digitalZoom > 2f
+            
+            // Calculate Qibla direction state with performance optimizations
+            selectedLocation?.let { location ->
+                qiblaDirectionState = qiblaOverlay.calculateDirectionLine(
+                    userLocation = location,
+                    viewportBounds = viewportBounds,
+                    zoomLevel = zoom,
+                    digitalZoom = digitalZoom,
+                    isHighPerformanceMode = isHighPerformanceMode
+                )
+            }
+        } else {
+            qiblaDirectionState = QiblaDirectionState(isVisible = false)
+        }
+    }
+
     Box(
         modifier = modifier
             .background(Color(0xFFE8F5E8))
@@ -207,6 +247,8 @@ fun OpenStreetMapView(
                     },
                     onDragEnd = {
                         isDragging = false
+                        // Trigger tile loading after drag ends
+                        lastDragPosition = Pair(tileX, tileY)
                     }
                 )
             }
@@ -264,6 +306,47 @@ fun OpenStreetMapView(
                 }
             }
 
+            // --- Draw Qibla Direction Line (above tiles, below UI controls) ---
+            if (showQiblaDirection) {
+                if (qiblaDirectionState.isVisible && qiblaDirectionState.isCalculationValid) {
+                    qiblaOverlay.renderDirectionLine(
+                        drawScope = this,
+                        directionState = qiblaDirectionState,
+                        centerOffset = Offset(centerX, centerY),
+                        tileX = tileX,
+                        tileY = tileY,
+                        zoom = zoom,
+                        digitalZoom = digitalZoom,
+                        mapType = mapType
+                    )
+                } else if (!qiblaDirectionState.isCalculationValid) {
+                    // Draw error indicator for failed Qibla calculation
+                    val errorColor = Color.Red.copy(alpha = 0.7f)
+                    val warningSize = 20f
+                    
+                    // Draw warning triangle at center
+                    drawCircle(
+                        color = errorColor,
+                        radius = warningSize,
+                        center = Offset(centerX, centerY + 40f),
+                        style = Stroke(width = 3f)
+                    )
+                    
+                    // Draw exclamation mark
+                    drawLine(
+                        color = errorColor,
+                        start = Offset(centerX, centerY + 30f),
+                        end = Offset(centerX, centerY + 45f),
+                        strokeWidth = 3f
+                    )
+                    drawCircle(
+                        color = errorColor,
+                        radius = 2f,
+                        center = Offset(centerX, centerY + 50f)
+                    )
+                }
+            }
+
             // --- Draw Location Pin (always at the center of the screen) ---
             val pinColor = Color.Red
             drawCircle(color = pinColor, radius = 15f, center = Offset(centerX, centerY))
@@ -298,9 +381,76 @@ fun OpenStreetMapView(
                 )
             }
         }
+        
+        // --- Memory Pressure and Performance Indicators ---
+        if (showQiblaDirection && (qiblaDirectionState.hasMemoryPressure || qiblaDirectionState.reducedComplexity)) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 16.dp, top = if (digitalZoomIndicator) 80.dp else 16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (qiblaDirectionState.hasMemoryPressure) 
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
+                    else 
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    if (qiblaDirectionState.hasMemoryPressure) {
+                        Text(
+                            text = "⚠️ Memory Pressure",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    if (qiblaDirectionState.reducedComplexity) {
+                        Text(
+                            text = "🔧 Simplified Mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (qiblaDirectionState.hasMemoryPressure) 
+                                MaterialTheme.colorScheme.onErrorContainer
+                            else 
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+        }
+        
+        // --- Qibla Calculation Error Indicator ---
+        if (showQiblaDirection && !qiblaDirectionState.isCalculationValid && qiblaDirectionState.errorMessage != null) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
+                    .widthIn(max = 250.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "⚠️",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(
+                        text = qiblaDirectionState.errorMessage!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
 
         // --- UI Elements (Zoom, Info) ---
-        Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = 130.dp, end = 16.dp)) {
+        val density = LocalDensity.current
+        val dynamicTopPadding = with(density) { panelHeight.toDp() + 16.dp }
+        Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = dynamicTopPadding, end = 16.dp)) {
             IconButton(
                 onClick = {
                     val maxTileZoom = getMaxZoomForMapType(mapType)
@@ -396,4 +546,59 @@ private fun getAccuracyForZoom(zoom: Int): Int {
 private fun getAccuracyForZoomWithDigitalZoom(zoom: Int, digitalZoom: Float): Int {
     val baseAccuracy = getAccuracyForZoom(zoom)
     return (baseAccuracy / digitalZoom).toInt().coerceAtLeast(1)
+}
+
+/**
+ * Calculates viewport bounds for the current map view
+ */
+private fun calculateViewportBounds(
+    centerTileX: Double,
+    centerTileY: Double,
+    zoom: Int,
+    viewportWidth: Int,
+    viewportHeight: Int
+): ViewportBounds {
+    val tileSize = 256.0
+    
+    // Calculate how many tiles are visible in each direction
+    val tilesVisibleX = viewportWidth / tileSize
+    val tilesVisibleY = viewportHeight / tileSize
+    
+    // Calculate bounds in tile coordinates
+    val minTileX = centerTileX - tilesVisibleX / 2
+    val maxTileX = centerTileX + tilesVisibleX / 2
+    val minTileY = centerTileY - tilesVisibleY / 2
+    val maxTileY = centerTileY + tilesVisibleY / 2
+    
+    // Convert tile coordinates to lat/lng
+    val westLon = tileXToLongitude(minTileX, zoom)
+    val eastLon = tileXToLongitude(maxTileX, zoom)
+    val northLat = tileYToLatitude(minTileY, zoom)
+    val southLat = tileYToLatitude(maxTileY, zoom)
+    val centerLat = tileYToLatitude(centerTileY, zoom)
+    val centerLon = tileXToLongitude(centerTileX, zoom)
+    
+    return ViewportBounds(
+        northLat = northLat,
+        southLat = southLat,
+        eastLon = eastLon,
+        westLon = westLon,
+        centerLat = centerLat,
+        centerLon = centerLon
+    )
+}
+
+/**
+ * Converts tile X coordinate to longitude
+ */
+private fun tileXToLongitude(tileX: Double, zoom: Int): Double {
+    return tileX / (1 shl zoom).toDouble() * 360.0 - 180.0
+}
+
+/**
+ * Converts tile Y coordinate to latitude
+ */
+private fun tileYToLatitude(tileY: Double, zoom: Int): Double {
+    val n = PI - 2.0 * PI * tileY / (1 shl zoom).toDouble()
+    return 180.0 / PI * atan(0.5 * (exp(n) - exp(-n)))
 }

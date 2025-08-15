@@ -179,11 +179,7 @@ object QiblaPerformanceMonitor {
      */
     fun initialize(applicationContext: Context) {
         context = applicationContext
-        if (com.bizzkoot.qiblafinder.BuildConfig.DEBUG) {
-            Timber.d("📍 Performance monitor initialized with debug logging enabled")
-        } else {
-            Timber.d("📍 Performance monitor initialized")
-        }
+        Timber.d("📍 Performance monitor initialized")
     }
     
     /**
@@ -297,18 +293,13 @@ object QiblaPerformanceMonitor {
      */
     fun setAdaptiveMode(enabled: Boolean) {
         isAdaptiveMode = enabled
-        if (com.bizzkoot.qiblafinder.BuildConfig.DEBUG) {
-            Timber.d("📍 Adaptive mode ${if (enabled) "enabled" else "disabled"} - Debug logging active")
-        } else {
-            Timber.d("📍 Adaptive mode ${if (enabled) "enabled" else "disabled"}")
-        }
+        Timber.d("📍 Adaptive mode ${if (enabled) "enabled" else "disabled"}")
     }
     
     /**
      * Logs detailed performance metrics (debug builds only)
      */
     fun logDetailedPerformanceMetrics() {
-        if (!com.bizzkoot.qiblafinder.BuildConfig.DEBUG) return
         
         val stats = getPerformanceStats()
         val memoryInfo = monitorMemoryUsage()
@@ -358,7 +349,6 @@ object QiblaPerformanceMonitor {
      * Logs performance warnings (debug builds only)
      */
     fun logPerformanceWarnings() {
-        if (!com.bizzkoot.qiblafinder.BuildConfig.DEBUG) return
         
         val recommendations = getPerformanceRecommendations()
         if (recommendations.size > 1 || recommendations.first() != "Performance is within acceptable parameters") {
@@ -373,7 +363,6 @@ object QiblaPerformanceMonitor {
      * Logs memory allocation events during high-frequency updates (debug builds only)
      */
     fun logMemoryAllocation(operationName: String, beforeMemory: Long, afterMemory: Long) {
-        if (!com.bizzkoot.qiblafinder.BuildConfig.DEBUG) return
         
         val memoryDiff = afterMemory - beforeMemory
         if (memoryDiff > 1024 * 1024) { // Log allocations > 1MB
@@ -385,7 +374,6 @@ object QiblaPerformanceMonitor {
      * Starts performance profiling session (debug builds only)
      */
     fun startProfilingSession(sessionName: String) {
-        if (!com.bizzkoot.qiblafinder.BuildConfig.DEBUG) return
         
         calculationStartTimes[sessionName] = System.currentTimeMillis()
         Timber.d("📍 Profiling session started: $sessionName")
@@ -395,7 +383,6 @@ object QiblaPerformanceMonitor {
      * Ends performance profiling session and logs results (debug builds only)
      */
     fun endProfilingSession(sessionName: String) {
-        if (!com.bizzkoot.qiblafinder.BuildConfig.DEBUG) return
         
         val startTime = calculationStartTimes[sessionName]
         if (startTime != null) {
@@ -583,11 +570,7 @@ object QiblaPerformanceMonitor {
         consecutiveFailures++
         lastFailureTime = System.currentTimeMillis()
         
-        if (com.bizzkoot.qiblafinder.BuildConfig.DEBUG) {
-            Timber.w(exception, "📍 Calculation failure recorded: $errorMessage (consecutive: $consecutiveFailures)")
-        } else {
-            Timber.w("📍 Calculation failure recorded: $errorMessage (consecutive: $consecutiveFailures)")
-        }
+        Timber.w(exception, "📍 Calculation failure recorded: $errorMessage (consecutive: $consecutiveFailures)")
     }
     
     /**
@@ -776,7 +759,7 @@ object QiblaPerformanceMonitor {
      * Logs current performance statistics
      */
     fun logPerformanceStats(debugOnly: Boolean = false) {
-        if (debugOnly && !com.bizzkoot.qiblafinder.BuildConfig.DEBUG) return
+        if (debugOnly) return
         
         val stats = getPerformanceStats()
         val logLevel = if (debugOnly) "DEBUG" else "INFO"

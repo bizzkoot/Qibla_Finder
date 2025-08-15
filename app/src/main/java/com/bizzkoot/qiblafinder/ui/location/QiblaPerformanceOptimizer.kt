@@ -201,11 +201,15 @@ class QiblaPerformanceOptimizer {
         }
     }
     
+    // High zoom configuration state
+    private var minDelayMs = THROTTLE_DELAY_MS
+    
     /**
      * Throttles calculation calls to prevent excessive computation during drag operations
      */
     fun throttleCalculation(
         scope: CoroutineScope,
+        minDelayMs: Long = this.minDelayMs,
         calculation: suspend () -> Unit
     ) {
         // Cancel previous throttled calculation
@@ -214,7 +218,7 @@ class QiblaPerformanceOptimizer {
         val currentTime = System.currentTimeMillis()
         val timeSinceLastCalculation = currentTime - lastCalculationTime
         
-        if (timeSinceLastCalculation >= THROTTLE_DELAY_MS) {
+        if (timeSinceLastCalculation >= minDelayMs) {
             // Execute immediately if enough time has passed
             throttleJob = scope.launch {
                 calculation()
@@ -223,11 +227,38 @@ class QiblaPerformanceOptimizer {
         } else {
             // Throttle the calculation
             throttleJob = scope.launch {
-                delay(THROTTLE_DELAY_MS - timeSinceLastCalculation)
+                delay(minDelayMs - timeSinceLastCalculation)
                 calculation()
                 lastCalculationTime = System.currentTimeMillis()
             }
         }
+    }
+    
+    /**
+     * Configures optimizer for high zoom mode with reduced throttling
+     */
+    fun configureForHighZoom() {
+        minDelayMs = 8L // 120fps cap for high zoom responsiveness
+        Timber.d("📍 Performance optimizer configured for high zoom mode (${minDelayMs}ms throttle)")
+    }
+    
+    /**
+     * Configures optimizer for normal zoom mode with standard throttling
+     */
+    fun configureForNormalZoom() {
+        minDelayMs = THROTTLE_DELAY_MS
+        Timber.d("📍 Performance optimizer configured for normal zoom mode (${minDelayMs}ms throttle)")
+    }
+    
+    /**
+     * Resets the optimizer state and cancels pending operations
+     */
+    fun reset() {
+        throttleJob?.cancel()
+        throttleJob = null
+        lastCalculationTime = 0L
+        lastSignificantLocation = null
+        Timber.d("📍 Performance optimizer state reset")
     }
     
     /**

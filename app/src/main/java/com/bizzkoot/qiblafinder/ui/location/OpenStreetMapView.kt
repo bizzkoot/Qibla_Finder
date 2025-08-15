@@ -22,6 +22,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.bizzkoot.qiblafinder.BuildConfig
 import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -31,16 +32,35 @@ import kotlin.math.*
 const val MAX_ZOOM_LEVEL = 19
 const val MAX_TILE_ZOOM_LEVEL = 18  // Maximum zoom level for tile downloads
 const val MIN_ZOOM_LEVEL = 2
-const val MAX_DIGITAL_ZOOM_FACTOR = 4f
-const val DIGITAL_ZOOM_STEP = 1.2f
-const val TILE_SIZE = 256f
+const val MAX_DIGITAL_ZOOM_FACTOR = 4.0
+const val DIGITAL_ZOOM_STEP = 1.2
+const val TILE_SIZE = 256.0
+
+// Enhanced pan state for high digital zoom arrow positioning
+data class EnhancedPanState(
+    val cumulativePanDistance: Float = 0f,
+    val lastSignificantUpdateTime: Long = 0L,
+    val isHighZoomMode: Boolean = false,
+    val digitalZoomFactor: Double = 1.0,
+    val panDistanceThreshold: Double = 10.0,
+    val timeBasedUpdateInterval: Long = 16L // 60fps target
+)
+
+// Configuration for digital zoom updates
+data class DigitalZoomUpdateConfig(
+    val highZoomThreshold: Double = 2.0,
+    val updateFrequencyMs: Long = 16L, // 60fps
+    val panSensitivityMultiplier: Double = 1.5,
+    val forcedUpdateThreshold: Double = 20.0,
+    val timeBasedUpdateEnabled: Boolean = true
+)
 
 // Device-specific zoom limits
-private fun getMaxDigitalZoomForDevice(): Float {
+private fun getMaxDigitalZoomForDevice(): Double {
     return when {
-        DeviceCapabilitiesDetector.isHighEndDevice() -> 4f
-        DeviceCapabilitiesDetector.isMidRangeDevice() -> 2.5f
-        else -> 2f
+        DeviceCapabilitiesDetector.isHighEndDevice() -> 4.0
+        DeviceCapabilitiesDetector.isMidRangeDevice() -> 2.5
+        else -> 2.0
     }
 }
 
@@ -52,6 +72,17 @@ private fun getMaxZoomForMapType(mapType: MapType): Int {
     }
 }
 
+// Calculate zoom-adaptive threshold for pan distance detection
+private fun calculateZoomAdaptiveThreshold(digitalZoomFactor: Double, config: DigitalZoomUpdateConfig): Double {
+    return when {
+        digitalZoomFactor > config.highZoomThreshold -> {
+            // More sensitive at higher zoom levels
+            config.forcedUpdateThreshold / (digitalZoomFactor * config.panSensitivityMultiplier)
+        }
+        else -> config.forcedUpdateThreshold
+    }.coerceAtLeast(5.0) // Minimum threshold
+}
+
 @Composable
 fun OpenStreetMapView(
     currentLocation: MapLocation,
@@ -61,6 +92,7 @@ fun OpenStreetMapView(
     mapType: MapType = MapType.STREET,
     showQiblaDirection: Boolean = true,
     onQiblaLineNeedsRedraw: () -> Unit = {},
+    onPanStop: (() -> Unit)? = null,
     panelHeight: Int = 0,
     selectedLocation: MapLocation? = null,
     isMapTypeChanging: Boolean = false,
@@ -74,7 +106,7 @@ fun OpenStreetMapView(
     var zoom by remember { mutableStateOf(18) }  // Initial zoom level (will be validated per map type)
     var tileX by remember { mutableStateOf(0.0) }
     var tileY by remember { mutableStateOf(0.0) }
-    var digitalZoom by remember { mutableStateOf(1f) }
+    var digitalZoom by remember { mutableStateOf(1.0) }
     var isTileLoadingPaused by remember { mutableStateOf(false) }
     var digitalZoomIndicator by remember { mutableStateOf(false) }
 
@@ -97,7 +129,7 @@ fun OpenStreetMapView(
         val maxTileZoom = getMaxZoomForMapType(mapType)
         if (zoom > maxTileZoom) {
             zoom = maxTileZoom
-            digitalZoom = 1f
+            digitalZoom = 1.0
             digitalZoomIndicator = false
             Timber.d("📍 Adjusted zoom level to $maxTileZoom for ${mapType.displayName}")
         }
@@ -106,37 +138,84 @@ fun OpenStreetMapView(
     // --- Drag State for Continuous Loading ---
     var isDragging by remember { mutableStateOf(false) }
     var lastDragPosition by remember { mutableStateOf(Pair(0.0, 0.0)) }
+    
+    // --- Enhanced Pan State for High Digital Zoom ---
+    var enhancedPanState by remember { mutableStateOf(EnhancedPanState()) }
+    var updateConfig by remember { mutableStateOf(DigitalZoomUpdateConfig()) }
+    var cumulativePanDistance by remember { mutableStateOf(0f) }
+    var lastSignificantUpdateTime by remember { mutableStateOf(0L) }
 
     // --- Initialization ---
+    LaunchedEffect(Unit) {
+        QiblaPerformanceMonitor.initialize(context.applicationContext)
+        QiblaPerformanceMonitor.setAdaptiveMode(true)
+    }
+    
     LaunchedEffect(currentLocation) {
-        val (initialX, initialY) = tileManager.latLngToTileXY(currentLocation.latitude, currentLocation.longitude, zoom)
+        // Use high-precision coordinate transformation for better accuracy
+        val (initialX, initialY) = PrecisionCoordinateTransformer.latLngToHighPrecisionTile(
+            currentLocation.latitude, currentLocation.longitude, zoom
+        )
         tileX = initialX
         tileY = initialY
     }
 
     // --- Digital Zoom Optimization ---
     LaunchedEffect(digitalZoom) {
-        isTileLoadingPaused = digitalZoom > 1f
+        isTileLoadingPaused = digitalZoom > 1.0
     }
 
     // --- Performance Monitoring ---
     LaunchedEffect(digitalZoom) {
-        if (digitalZoom > 2f) {
-            val memoryUsage = tileManager.getCacheSizeMB(mapType)
-            if (memoryUsage > 80) {
-                Timber.w("📍 High memory usage during digital zoom: ${memoryUsage}MB")
-                if (digitalZoom > 3f) {
-                    digitalZoom = 3f
+        if (digitalZoom > 2.0) {
+            // Monitor memory usage using QiblaPerformanceMonitor
+            val memoryInfo = QiblaPerformanceMonitor.monitorMemoryUsage()
+            val tileMemoryUsage = tileManager.getCacheSizeMB(mapType)
+            
+            if (memoryInfo.isPressure || tileMemoryUsage > 80) {
+                Timber.w("📍 High memory usage during digital zoom: System ${memoryInfo.usedMemoryMB}MB, Tiles ${tileMemoryUsage}MB")
+                
+                // Handle excessive memory usage
+                val recoveryAction = QiblaPerformanceMonitor.handleExcessiveMemoryUsage()
+                when (recoveryAction) {
+                    QiblaPerformanceMonitor.MemoryRecoveryAction.EMERGENCY_STOP -> {
+                        Timber.e("📍 Emergency stop - reducing digital zoom due to critical memory pressure")
+                        digitalZoom = 1.5
+                        QiblaPerformanceMonitor.executeMemoryRecovery(recoveryAction)
+                    }
+                    QiblaPerformanceMonitor.MemoryRecoveryAction.AGGRESSIVE_CLEANUP -> {
+                        Timber.w("📍 Aggressive cleanup - reducing digital zoom")
+                        digitalZoom = kotlin.math.min(digitalZoom * 0.8, 2.5)
+                        QiblaPerformanceMonitor.executeMemoryRecovery(recoveryAction)
+                    }
+                    QiblaPerformanceMonitor.MemoryRecoveryAction.THROTTLE_UPDATES -> {
+                        if (digitalZoom > 3.0) {
+                            digitalZoom = 3.0
+                        }
+                        QiblaPerformanceMonitor.executeMemoryRecovery(recoveryAction)
+                    }
+                    else -> {
+                        if (digitalZoom > 3.0) {
+                            digitalZoom = 3.0
+                        }
+                    }
                 }
+            }
+            
+            // Log performance stats periodically (debug builds only)
+            if (digitalZoom > 3.0) {
+                QiblaPerformanceMonitor.logPerformanceStats(debugOnly = true)
+                QiblaPerformanceMonitor.logDetailedPerformanceMetrics()
             }
         }
     }
 
     // --- Error Handling for Extreme Zoom ---
     LaunchedEffect(digitalZoom) {
-        if (digitalZoom > getMaxDigitalZoomForDevice()) {
-            digitalZoom = getMaxDigitalZoomForDevice()
-            Timber.w("📍 Digital zoom limited to device capabilities")
+        val maxZoom = DeviceCapabilitiesDetector.getMaxDigitalZoomFactor().toDouble()
+        if (digitalZoom > maxZoom) {
+            digitalZoom = maxZoom
+            Timber.w("📍 Digital zoom limited to device capabilities: ${maxZoom}x")
         }
     }
 
@@ -196,23 +275,117 @@ fun OpenStreetMapView(
         onTileInfoChanged(tileStateCache.size, tileManager.getCacheSizeMB(mapType))
     }
 
+    // --- Time-based forced updates for high digital zoom scenarios with adaptive frequency ---
+    LaunchedEffect(digitalZoom, isDragging, enhancedPanState.isHighZoomMode) {
+        if (enhancedPanState.isHighZoomMode && isDragging && updateConfig.timeBasedUpdateEnabled) {
+            // Get device tier and check for fallback configuration
+            val deviceTier = DeviceCapabilitiesDetector.getDeviceTier()
+            val fallbackConfig = QiblaPerformanceMonitor.createFallbackConfig(deviceTier)
+            
+            while (isActive && isDragging && digitalZoom > updateConfig.highZoomThreshold) {
+                // Validate memory before continuing high-frequency updates
+                if (!QiblaPerformanceMonitor.validateMemoryForHighFrequencyUpdates()) {
+                    // Handle memory pressure and potentially stop updates
+                    val recoveryNeeded = QiblaPerformanceMonitor.checkAndHandleMemoryPressure()
+                    if (recoveryNeeded) {
+                        Timber.w("📍 Pausing high-frequency updates due to memory pressure")
+                        kotlinx.coroutines.delay(1000) // Wait 1 second before retry
+                        continue
+                    }
+                }
+                
+                // Calculate update frequency with fallback considerations
+                val adaptiveFrequency = if (fallbackConfig != null) {
+                    // Use fallback frequency and log the activation
+                    Timber.w("📍 Fallback mode activated for device tier: $deviceTier")
+                    fallbackConfig.maxUpdateFrequencyMs.coerceAtLeast(updateConfig.updateFrequencyMs)
+                } else if (QiblaPerformanceMonitor.shouldThrottleForMemoryPressure()) {
+                    QiblaPerformanceMonitor.recordThrottleEvent()
+                    updateConfig.updateFrequencyMs * 2 // Slow down during memory pressure
+                } else {
+                    QiblaPerformanceMonitor.calculateAdaptiveUpdateFrequency(digitalZoom.toFloat(), deviceTier)
+                }
+                
+                kotlinx.coroutines.delay(adaptiveFrequency)
+                QiblaPerformanceMonitor.recordHighFrequencyUpdate()
+                onQiblaLineNeedsRedraw()
+                
+                // Emergency fallback check with memory recovery
+                if (!QiblaPerformanceMonitor.isPerformanceAcceptable()) {
+                    val emergencyConfig = QiblaPerformanceMonitor.createEmergencyFallbackConfig()
+                    Timber.e("📍 Emergency fallback activated - reducing to ${emergencyConfig.maxUpdateFrequencyMs}ms updates")
+                    
+                    // Attempt memory recovery
+                    QiblaPerformanceMonitor.checkAndHandleMemoryPressure()
+                    kotlinx.coroutines.delay(emergencyConfig.maxUpdateFrequencyMs)
+                }
+            }
+        }
+    }
+
     // --- Calculate Qibla Direction State ---
-    LaunchedEffect(selectedLocation, tileX, tileY, zoom, digitalZoom, showQiblaDirection, isDragging) {
+    LaunchedEffect(selectedLocation, tileX, tileY, zoom, digitalZoom, showQiblaDirection, isDragging, cumulativePanDistance) {
         if (showQiblaDirection) {
             // Calculate viewport bounds for efficient path clipping
             val viewportBounds = calculateViewportBounds(tileX, tileY, zoom, 800, 800)
             
-            // Enable high-performance mode during dragging or high digital zoom
-            val isHighPerformanceMode = isDragging || digitalZoom > 2f
+            // Check for fallback configuration
+            val deviceTier = DeviceCapabilitiesDetector.getDeviceTier()
+            val fallbackConfig = QiblaPerformanceMonitor.createFallbackConfig(deviceTier)
             
-            // Calculate Qibla direction state with performance optimizations
+            // Apply fallback settings if needed
+            val isHighPerformanceMode = if (fallbackConfig?.simplifiedCalculations == true) {
+                false // Disable high-performance mode to reduce CPU usage
+            } else {
+                isDragging || digitalZoom > 2.0
+            }
+            
+            val highPrecisionEnabled = if (fallbackConfig?.disableHighPrecisionMode == true) {
+                false // Disable high precision mode to reduce CPU usage
+            } else {
+                digitalZoom > updateConfig.highZoomThreshold
+            }
+            
+            // Calculate Qibla direction state with fallback optimizations
             selectedLocation?.let { location ->
-                qiblaDirectionState = qiblaOverlay.calculateDirectionLine(
-                    userLocation = location,
-                    viewportBounds = viewportBounds,
-                    zoomLevel = zoom,
-                    digitalZoom = digitalZoom,
-                    isHighPerformanceMode = isHighPerformanceMode
+                // Determine update frequency based on current state and fallback config
+                val updateFreq = if (fallbackConfig != null) {
+                    when (deviceTier) {
+                        QiblaPerformanceMonitor.DeviceTier.LOW_END -> UpdateFrequency.THROTTLED
+                        QiblaPerformanceMonitor.DeviceTier.MID_RANGE -> UpdateFrequency.STANDARD
+                        else -> UpdateFrequency.HIGH_FREQUENCY
+                    }
+                } else {
+                    when {
+                        enhancedPanState.isHighZoomMode && isDragging -> UpdateFrequency.HIGH_FREQUENCY
+                        digitalZoom > 3f && isDragging -> UpdateFrequency.ULTRA_HIGH_FREQUENCY
+                        !isDragging -> UpdateFrequency.STANDARD
+                        else -> UpdateFrequency.THROTTLED
+                    }
+                }
+                
+                // Use safe calculation with recovery mechanisms
+                val calculationResult = QiblaPerformanceMonitor.safeCalculation(
+                    operationName = "Qibla Direction Calculation",
+                    digitalZoom = digitalZoom.toFloat(),
+                    isHighZoom = digitalZoom > 2.0
+                ) {
+                    qiblaOverlay.calculateDirectionLine(
+                        userLocation = location,
+                        viewportBounds = viewportBounds,
+                        zoomLevel = zoom,
+                        digitalZoom = digitalZoom.toFloat(),
+                        isHighPerformanceMode = isHighPerformanceMode,
+                        highPrecisionMode = highPrecisionEnabled,
+                        updateFrequency = updateFreq
+                    )
+                }
+                
+                qiblaDirectionState = calculationResult ?: QiblaDirectionState(
+                    isVisible = true,
+                    isCalculationValid = false,
+                    errorMessage = "Calculation failed - using recovery mode",
+                    reducedComplexity = true
                 )
             }
         } else {
@@ -227,28 +400,65 @@ fun OpenStreetMapView(
                 detectDragGestures(
                     onDragStart = { _ ->
                         isDragging = true
+                        // Reset cumulative distance on new drag session
+                        cumulativePanDistance = 0f
+                        lastSignificantUpdateTime = System.currentTimeMillis()
+                        
+                        // Update enhanced pan state
+                        enhancedPanState = enhancedPanState.copy(
+                            isHighZoomMode = digitalZoom > updateConfig.highZoomThreshold,
+                            digitalZoomFactor = digitalZoom,
+                            panDistanceThreshold = calculateZoomAdaptiveThreshold(digitalZoom, updateConfig)
+                        )
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
                         
                         // When digital zoom increases, drag sensitivity should decrease.
-                        val dragSensitivity = 1f / digitalZoom
+                        val dragSensitivity = (1.0 / digitalZoom).toFloat()
                         val adjustedDragAmount = Offset(
                             dragAmount.x * dragSensitivity,
                             dragAmount.y * dragSensitivity
                         )
                         
-                        tileX -= adjustedDragAmount.x / TILE_SIZE
-                        tileY -= adjustedDragAmount.y / TILE_SIZE
-                        val (newLat, newLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
+                        // Track cumulative pan distance for high zoom arrow positioning with double precision
+                        val panDistance = kotlin.math.sqrt(
+                            (dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y).toDouble()
+                        ).toFloat()
+                        cumulativePanDistance += panDistance
+                        
+                        // Enhanced sensitivity thresholds based on digital zoom level
+                        val currentTime = System.currentTimeMillis()
+                        val timeSinceLastUpdate = currentTime - lastSignificantUpdateTime
+                        val shouldForceUpdate = cumulativePanDistance >= enhancedPanState.panDistanceThreshold ||
+                                (enhancedPanState.isHighZoomMode && timeSinceLastUpdate >= updateConfig.updateFrequencyMs)
+                        
+                        // Use double precision arithmetic for tile coordinate updates
+                        tileX -= adjustedDragAmount.x.toDouble() / TILE_SIZE
+                        tileY -= adjustedDragAmount.y.toDouble() / TILE_SIZE
+                        val (newLat, newLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(tileX, tileY, zoom)
                         onLocationSelected(MapLocation(newLat, newLng))
 
                         lastDragPosition = Pair(tileX, tileY)
+                        
+                        // Forced update logic when cumulative distance exceeds threshold
+                        if (shouldForceUpdate) {
+                            onQiblaLineNeedsRedraw()
+                            cumulativePanDistance = 0f // Reset on significant updates
+                            lastSignificantUpdateTime = currentTime
+                        }
                     },
                     onDragEnd = {
                         isDragging = false
+                        // Enhanced pan state cleanup
+                        cumulativePanDistance = 0f
+                        lastSignificantUpdateTime = 0L
+                        enhancedPanState = enhancedPanState.copy(isHighZoomMode = false)
+                        
                         // Trigger tile loading after drag ends
                         lastDragPosition = Pair(tileX, tileY)
+                        // Trigger progressive auto-refresh
+                        onPanStop?.invoke()
                     }
                 )
             }
@@ -258,7 +468,7 @@ fun OpenStreetMapView(
             val centerY = size.height / 2f
 
             withTransform({
-                scale(digitalZoom, digitalZoom, pivot = Offset(centerX, centerY))
+                scale(digitalZoom.toFloat(), digitalZoom.toFloat(), pivot = Offset(centerX, centerY))
             }) {
                 val fractionalTileX = tileX - floor(tileX)
                 val fractionalTileY = tileY - floor(tileY)
@@ -272,8 +482,8 @@ fun OpenStreetMapView(
                 tileStateCache.forEach { (cacheKey, state) ->
                     val tile = parseTileCacheKey(cacheKey)
                     if (tile != null && tile.mapType == mapType) {
-                        val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE - tileOffsetX + canvasCenter.x
-                        val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE - tileOffsetY + canvasCenter.y
+                        val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE.toFloat() - tileOffsetX + canvasCenter.x
+                        val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE.toFloat() - tileOffsetY + canvasCenter.y
 
                         when (state) {
                             is TileLoadState.Loading -> {
@@ -281,7 +491,7 @@ fun OpenStreetMapView(
                                 drawRect(
                                     color = Color.LightGray,
                                     topLeft = Offset(drawX, drawY),
-                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE, TILE_SIZE)
+                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
                                 )
                             }
                             is TileLoadState.LowRes -> {
@@ -297,7 +507,7 @@ fun OpenStreetMapView(
                                 drawRect(
                                     color = Color.Gray,
                                     topLeft = Offset(drawX, drawY),
-                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE, TILE_SIZE)
+                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
                                 )
                                 // You could also draw an 'X' or other indicator
                             }
@@ -316,8 +526,9 @@ fun OpenStreetMapView(
                         tileX = tileX,
                         tileY = tileY,
                         zoom = zoom,
-                        digitalZoom = digitalZoom,
-                        mapType = mapType
+                        digitalZoom = digitalZoom.toFloat(),
+                        mapType = mapType,
+                        selectiveRenderingMode = enhancedPanState.isHighZoomMode && isDragging
                     )
                 } else if (!qiblaDirectionState.isCalculationValid) {
                     // Draw error indicator for failed Qibla calculation
@@ -354,7 +565,7 @@ fun OpenStreetMapView(
 
             // --- Draw Accuracy Circle (around the pin) ---
             val accuracyInMeters = getAccuracyForZoomWithDigitalZoom(zoom, digitalZoom)
-            val accuracyInPixels = tileManager.metersToPixels(accuracyInMeters.toFloat(), zoom) * digitalZoom
+            val accuracyInPixels = (tileManager.metersToPixels(accuracyInMeters.toFloat(), zoom) * digitalZoom).toFloat()
             drawCircle(color = Color.Red.copy(alpha = 0.1f), radius = accuracyInPixels, center = Offset(centerX, centerY))
             drawCircle(color = Color.Red, radius = accuracyInPixels, center = Offset(centerX, centerY), style = Stroke(width = 2f))
         }
@@ -456,19 +667,19 @@ fun OpenStreetMapView(
                     val maxTileZoom = getMaxZoomForMapType(mapType)
                     if (zoom < maxTileZoom) {
                         val newZoom = zoom + 1
-                        val (currentLat, currentLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
-                        val (newTileX, newTileY) = tileManager.latLngToTileXY(currentLat, currentLng, newZoom)
+                        val (currentLat, currentLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(tileX, tileY, zoom)
+                        val (newTileX, newTileY) = PrecisionCoordinateTransformer.latLngToHighPrecisionTile(currentLat, currentLng, newZoom)
                         zoom = newZoom
                         tileX = newTileX
                         tileY = newTileY
-                        digitalZoom = 1f
+                        digitalZoom = 1.0
                         digitalZoomIndicator = false
                         onLocationSelected(MapLocation(currentLat, currentLng))
                     } else {
                         // Use digital zoom when tile zoom limit is reached
                         val maxDigitalZoom = getMaxDigitalZoomForDevice()
                         if (digitalZoom < maxDigitalZoom) {
-                            digitalZoom = min(digitalZoom * DIGITAL_ZOOM_STEP, maxDigitalZoom)
+                            digitalZoom = kotlin.math.min(digitalZoom * DIGITAL_ZOOM_STEP, maxDigitalZoom)
                             digitalZoomIndicator = true
                         }
                     }
@@ -480,16 +691,16 @@ fun OpenStreetMapView(
             Spacer(modifier = Modifier.height(8.dp))
             IconButton(
                 onClick = {
-                    if (digitalZoom > 1f) {
-                        digitalZoom = max(digitalZoom / DIGITAL_ZOOM_STEP, 1f)
-                        if (digitalZoom <= 1f) {
-                            digitalZoom = 1f
+                    if (digitalZoom > 1.0) {
+                        digitalZoom = kotlin.math.max(digitalZoom / DIGITAL_ZOOM_STEP, 1.0)
+                        if (digitalZoom <= 1.0) {
+                            digitalZoom = 1.0
                             digitalZoomIndicator = false
                         }
                     } else {
-                        val newZoom = max(zoom - 1, MIN_ZOOM_LEVEL)
-                        val (currentLat, currentLng) = tileManager.tileXYToLatLng(tileX, tileY, zoom)
-                        val (newTileX, newTileY) = tileManager.latLngToTileXY(currentLat, currentLng, newZoom)
+                        val newZoom = kotlin.math.max(zoom - 1, MIN_ZOOM_LEVEL)
+                        val (currentLat, currentLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(tileX, tileY, zoom)
+                        val (newTileX, newTileY) = PrecisionCoordinateTransformer.latLngToHighPrecisionTile(currentLat, currentLng, newZoom)
                         zoom = newZoom
                         tileX = newTileX
                         tileY = newTileY
@@ -543,7 +754,7 @@ private fun getAccuracyForZoom(zoom: Int): Int {
     }
 }
 
-private fun getAccuracyForZoomWithDigitalZoom(zoom: Int, digitalZoom: Float): Int {
+private fun getAccuracyForZoomWithDigitalZoom(zoom: Int, digitalZoom: Double): Int {
     val baseAccuracy = getAccuracyForZoom(zoom)
     return (baseAccuracy / digitalZoom).toInt().coerceAtLeast(1)
 }

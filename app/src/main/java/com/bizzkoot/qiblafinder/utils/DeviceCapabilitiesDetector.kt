@@ -79,4 +79,45 @@ object DeviceCapabilitiesDetector {
             throw IllegalStateException("DeviceCapabilitiesDetector not initialized")
         }
     }
+
+    /**
+     * Gets device tier for performance optimization
+     */
+    fun getDeviceTier(): com.bizzkoot.qiblafinder.ui.location.QiblaPerformanceMonitor.DeviceTier {
+        checkInitialization()
+        return when {
+            deviceCapabilities.isHighEndDevice -> com.bizzkoot.qiblafinder.ui.location.QiblaPerformanceMonitor.DeviceTier.HIGH_END
+            deviceCapabilities.isMidRangeDevice -> com.bizzkoot.qiblafinder.ui.location.QiblaPerformanceMonitor.DeviceTier.MID_RANGE
+            else -> com.bizzkoot.qiblafinder.ui.location.QiblaPerformanceMonitor.DeviceTier.LOW_END
+        }
+    }
+
+    /**
+     * Gets maximum digital zoom factor based on device capabilities
+     */
+    fun getMaxDigitalZoomFactor(): Float {
+        checkInitialization()
+        return when {
+            deviceCapabilities.isHighEndDevice -> 4.0f
+            deviceCapabilities.isMidRangeDevice -> 2.5f
+            else -> 2.0f
+        }
+    }
+
+    /**
+     * Gets optimal update frequency for the device
+     */
+    fun getOptimalUpdateFrequency(digitalZoom: Float): Long {
+        checkInitialization()
+        val baseFrequency = when {
+            deviceCapabilities.isHighEndDevice -> 16L // 60fps
+            deviceCapabilities.isMidRangeDevice -> 33L // 30fps
+            else -> 50L // 20fps
+        }
+        
+        // Adjust based on zoom level
+        val zoomMultiplier = if (digitalZoom > 2f) 1.5f else 1.0f
+        return (baseFrequency * zoomMultiplier).toLong().coerceAtMost(100L)
+    }
 }
+

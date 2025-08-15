@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import timber.log.Timber
 
 data class ManualLocationUiState(
@@ -43,6 +46,32 @@ class ManualLocationViewModel(
     
     // Performance optimizer for throttling calculations during drag operations
     private val performanceOptimizer = QiblaPerformanceOptimizer()
+    
+    // Progressive delay state for auto-refresh functionality
+    private var panDebounceJob: Job? = null
+    private var consecutivePans = 0
+    private var lastPanTime = 0L
+    
+    // Progressive delay configuration constants
+    private val baseDelay = 400L          // Initial delay (400ms)
+    private val maxDelay = 800L           // Maximum delay cap (800ms)
+    private val panResetThreshold = 2000L // Counter reset time (2 seconds)
+    private val delayIncrement = 100L     // Delay increase per pan (100ms)
+
+    /**
+     * Calculates the progressive delay based on consecutive pan count.
+     * Delay progression: 400ms → 500ms → 600ms → 700ms → 800ms (max)
+     */
+    private fun calculateProgressiveDelay(): Long {
+        val cappedPans = consecutivePans.coerceAtMost(4)
+        val increment = cappedPans * delayIncrement
+        val calculatedDelay = baseDelay + increment
+        val finalDelay = calculatedDelay.coerceAtMost(maxDelay)
+        
+        Timber.d("📍 Progressive delay calculation - Consecutive pans: $consecutivePans, Capped: $cappedPans, Increment: ${increment}ms, Final delay: ${finalDelay}ms")
+        
+        return finalDelay
+    }
 
     init {
         Timber.d("📍 ManualLocationViewModel - Initializing ViewModel")
@@ -156,10 +185,19 @@ class ManualLocationViewModel(
      */
     fun toggleQiblaDirection() {
         val currentState = _uiState.value
+        val newShowQiblaDirection = !currentState.showQiblaDirection
+        
         _uiState.value = currentState.copy(
-            showQiblaDirection = !currentState.showQiblaDirection
+            showQiblaDirection = newShowQiblaDirection
         )
-        Timber.d("📍 Qibla direction visibility toggled to: ${_uiState.value.showQiblaDirection}")
+        
+        // Cancel pending auto-refresh when hiding Qibla direction
+        if (!newShowQiblaDirection) {
+            panDebounceJob?.cancel()
+            Timber.d("📍 Auto-refresh cancelled - Qibla direction hidden")
+        }
+        
+        Timber.d("📍 Qibla direction visibility toggled to: $newShowQiblaDirection")
     }
 
     /**
@@ -229,13 +267,189 @@ class ManualLocationViewModel(
      */
     fun redrawQiblaLine() {
         _uiState.value.selectedLocation?.let { location ->
+            // Cancel pending auto-refresh and reset progressive state on manual redraw
+            panDebounceJob?.cancel()
+            consecutivePans = 0
+            
             updateQiblaInfo(location)
             _uiState.value = _uiState.value.copy(
                 qiblaLineVisible = true,
                 needsQiblaRedraw = false,
                 error = null
             )
-            Timber.d("📍 Qibla line manually redrawn")
+            
+            Timber.d("📍 Qibla line manually redrawn - Progressive delay counter reset")
+        }
+    }
+    
+    /**
+     * Performs automatic Qibla line redraw triggered by progressive auto-refresh.
+     * Reuses existing redraw logic with specific logging for auto-triggered redraws.
+     */
+    private fun autoRedrawQiblaLine() {
+        _uiState.value.selectedLocation?.let { location ->
+            updateQiblaInfo(location)
+            _uiState.value = _uiState.value.copy(
+                qiblaLineVisible = true,
+                needsQiblaRedraw = false,
+                error = null
+            )
+            Timber.d("📍 Qibla line automatically redrawn")
+        }
+    }
+    
+    /**
+     * Handles pan update events during high digital zoom scenarios.
+     * Provides optimized update handling for enhanced arrow positioning.
+     *
+     * @param cumulativeDistance The cumulative pan distance since drag start
+     */
+    fun onPanUpdateAtHighZoom(cumulativeDistance: Float) {
+        // Use optimized calculation for high zoom scenarios
+        _uiState.value.selectedLocation?.let { location ->
+            performanceOptimizer.throttleCalculation(viewModelScope, minDelayMs = 8L) { // 120fps cap
+                updateQiblaInfo(location)
+            }
+        }
+        
+        Timber.d("📍 High zoom pan update - Cumulative distance: ${cumulativeDistance}px")
+    }
+    
+    /**
+     * Configures the ViewModel for high zoom mode operations.
+     * Optimizes performance settings based on digital zoom factor.
+     *
+     * @param digitalZoomFactor The current digital zoom level
+     */
+    fun configureHighZoomMode(digitalZoomFactor: Float) {
+        // Enable high-performance mode for digital zoom > 2x
+        if (digitalZoomFactor > 2f) {
+            // Reduce throttling for more responsive updates during high zoom
+            performanceOptimizer.configureForHighZoom()
+        } else {
+            // Reset to normal performance mode
+            performanceOptimizer.configureForNormalZoom()
+        }
+        
+        Timber.d("📍 High zoom mode configured - Digital zoom: ${digitalZoomFactor}x")
+    }
+    
+    /**
+     * Resets accumulated pan tracking state.
+     * Called when starting new drag sessions or when significant updates occur.
+     */
+    fun resetPanAccumulation() {
+        // Reset performance optimizer state
+        performanceOptimizer.reset()
+        
+        // Cancel any pending delayed operations
+        panDebounceJob?.cancel()
+        panDebounceJob = null
+        
+        Timber.d("📍 Pan accumulation state reset")
+    }
+
+    /**
+     * Handles pan stop events for progressive auto-refresh functionality.
+     * Implements adaptive delay based on consecutive pan frequency.
+     * Enhanced to handle enhanced pan state cleanup.
+     */
+    fun onPanStop() {
+        try {
+            val currentTime = System.currentTimeMillis()
+            
+            // Validate current time to prevent issues with system clock changes
+            if (currentTime < lastPanTime) {
+                Timber.w("📍 System clock moved backwards - Resetting pan timing state")
+                consecutivePans = 0
+                lastPanTime = currentTime
+                return
+            }
+            
+            // Reset counter if user hasn't panned recently (beyond threshold)
+            val timeSinceLastPan = currentTime - lastPanTime
+            if (timeSinceLastPan > panResetThreshold) {
+                val previousPans = consecutivePans
+                consecutivePans = 0
+                Timber.d("📍 Progressive delay counter reset after inactivity - Time since last pan: ${timeSinceLastPan}ms, Previous count: $previousPans")
+            }
+        
+        consecutivePans++
+        lastPanTime = currentTime
+        
+        // Enhanced pan state cleanup
+        resetPanAccumulation()
+        
+        // Calculate progressive delay based on consecutive pans
+        val progressiveDelay = calculateProgressiveDelay()
+        
+        Timber.d("📍 Pan stop detected - Consecutive pans: $consecutivePans, Delay: ${progressiveDelay}ms")
+        
+        // Cancel previous auto-refresh job and schedule new one
+        val hadPreviousJob = panDebounceJob != null
+        panDebounceJob?.cancel()
+        if (hadPreviousJob) {
+            Timber.d("📍 Previous auto-refresh job cancelled for new pan activity")
+        }
+        
+        panDebounceJob = viewModelScope.launch {
+            try {
+                delay(progressiveDelay)
+                
+                // Check if coroutine is still active and Qibla direction should be shown
+                if (isActive && uiState.value.showQiblaDirection) {
+                    autoRedrawQiblaLine()
+                    Timber.d("📍 Auto-refresh executed after ${progressiveDelay}ms delay")
+                } else {
+                    val reason = when {
+                        !isActive -> "coroutine inactive"
+                        !uiState.value.showQiblaDirection -> "Qibla direction hidden"
+                        else -> "unknown condition"
+                    }
+                    Timber.d("📍 Auto-refresh skipped - Reason: $reason")
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                Timber.d("📍 Auto-refresh cancelled due to new pan activity")
+                // Normal cancellation - no error handling needed
+            } catch (e: Exception) {
+                Timber.e(e, "📍 Error in progressive auto-refresh - Exception: ${e.javaClass.simpleName}, Message: ${e.message}")
+                // Reset state on unexpected errors to prevent stuck state
+                try {
+                    consecutivePans = 0
+                    lastPanTime = 0L
+                    panDebounceJob = null
+                    Timber.d("📍 Progressive delay state reset due to error recovery")
+                } catch (resetError: Exception) {
+                    Timber.e(resetError, "📍 Critical error during state reset")
+                }
+            }
+        }
+        } catch (e: Exception) {
+            Timber.e(e, "📍 Critical error in onPanStop - Resetting progressive delay state")
+            // Emergency state reset
+            try {
+                consecutivePans = 0
+                lastPanTime = 0L
+                panDebounceJob?.cancel()
+                panDebounceJob = null
+            } catch (resetError: Exception) {
+                Timber.e(resetError, "📍 Failed to reset state during error recovery")
+            }
+        }
+    }
+    
+    /**
+     * Clean up resources when the ViewModel is destroyed
+     */
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            // Cancel any pending auto-refresh jobs to prevent memory leaks
+            panDebounceJob?.cancel()
+            panDebounceJob = null
+            Timber.d("📍 ManualLocationViewModel - Cleanup completed, auto-refresh job cancelled")
+        } catch (e: Exception) {
+            Timber.e(e, "📍 Error during ViewModel cleanup")
         }
     }
 } 

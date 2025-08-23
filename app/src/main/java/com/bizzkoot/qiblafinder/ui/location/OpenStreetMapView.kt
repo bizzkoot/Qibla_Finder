@@ -113,6 +113,7 @@ fun OpenStreetMapView(
     var tileStateCache by remember(mapType) { mutableStateOf<Map<String, TileLoadState>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var forceTileReload by remember { mutableStateOf(false) }
     
     // --- Qibla Direction State ---
     var qiblaDirectionState by remember { mutableStateOf(QiblaDirectionState()) }
@@ -124,14 +125,21 @@ fun OpenStreetMapView(
         // Clear Qibla direction cache when map type changes
         qiblaOverlay.clearCache()
         
+        // Reset digital zoom state during map type changes
+        digitalZoom = 1.0
+        digitalZoomIndicator = false
+        Timber.d("📍 Digital zoom reset during map type change to ${mapType.displayName}")
+        
         // Validate zoom level for the new map type
         val maxTileZoom = getMaxZoomForMapType(mapType)
         if (zoom > maxTileZoom) {
             zoom = maxTileZoom
-            digitalZoom = 1.0
-            digitalZoomIndicator = false
             Timber.d("📍 Adjusted zoom level to $maxTileZoom for ${mapType.displayName}")
         }
+        
+        // Force tile reload after map type changes
+        forceTileReload = true
+        Timber.d("📍 Force tile reload triggered for map type change to ${mapType.displayName}")
     }
 
     // --- Drag State for Continuous Loading ---
@@ -219,17 +227,14 @@ fun OpenStreetMapView(
     }
 
     // --- Enhanced Tile Loading and Accuracy Calculation ---
-    LaunchedEffect(tileX, tileY, zoom, mapType, isDragging, isMapTypeChanging) {
+    LaunchedEffect(tileX, tileY, zoom, mapType, isDragging, isMapTypeChanging, forceTileReload) {
         // Skip tile loading if paused (during digital zoom) or during interactions
-        if (isTileLoadingPaused || isDragging) {
+        // Exception: Allow tile loading during map type changes even if normally paused
+        // Exception: Allow tile loading when force reload is triggered
+        if ((isTileLoadingPaused && !isMapTypeChanging && !forceTileReload) || isDragging) {
             return@LaunchedEffect
         }
         
-        // Reset tile cache when map type changes
-        if (isMapTypeChanging) {
-            tileStateCache = emptyMap()
-        }
-
         // Validate zoom level for current map type
         val maxTileZoom = getMaxZoomForMapType(mapType)
         if (zoom > maxTileZoom) {
@@ -267,6 +272,12 @@ fun OpenStreetMapView(
             }
         }
         isLoading = false
+        
+        // Reset force tile reload flag after successful loading
+        if (forceTileReload) {
+            forceTileReload = false
+            Timber.d("📍 Force tile reload completed, flag reset")
+        }
     }
 
     // Update tile info when cache changes

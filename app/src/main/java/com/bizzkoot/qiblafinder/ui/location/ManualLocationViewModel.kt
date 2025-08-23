@@ -169,9 +169,9 @@ class ManualLocationViewModel(
         )
 
         // The view will react to the state change and reload the tiles.
-        // We can add a small delay to allow the UI to update.
+        // Increased delay for better state coordination during map type transitions.
         viewModelScope.launch {
-            kotlinx.coroutines.delay(100) // Allow cache reset and tile loading
+            kotlinx.coroutines.delay(400) // Allow cache reset and tile loading
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 isMapTypeChanging = false

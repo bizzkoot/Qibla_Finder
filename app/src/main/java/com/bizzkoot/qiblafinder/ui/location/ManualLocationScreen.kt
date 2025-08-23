@@ -169,7 +169,6 @@ fun ManualLocationScreen(
                     onQiblaLineNeedsRedraw = { viewModel.markQiblaLineNeedsRedraw() },
                     onPanStop = { viewModel.onPanStop() },
                     panelHeight = uiState.panelHeight,
-                    selectedLocation = uiState.selectedLocation,
                     isMapTypeChanging = uiState.isMapTypeChanging,
                     modifier = Modifier.fillMaxSize()
                 )

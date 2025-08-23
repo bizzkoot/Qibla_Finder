@@ -31,7 +31,7 @@ import kotlin.math.*
 const val MAX_ZOOM_LEVEL = 19
 const val MAX_TILE_ZOOM_LEVEL = 18  // Maximum zoom level for tile downloads
 const val MIN_ZOOM_LEVEL = 2
-const val MAX_DIGITAL_ZOOM_FACTOR = 4.0
+const val MAX_DIGITAL_ZOOM_FACTOR = 5.0
 const val DIGITAL_ZOOM_STEP = 1.2
 const val TILE_SIZE = 256.0
 
@@ -57,9 +57,9 @@ data class DigitalZoomUpdateConfig(
 // Device-specific zoom limits
 private fun getMaxDigitalZoomForDevice(): Double {
     return when {
-        DeviceCapabilitiesDetector.isHighEndDevice() -> 4.0
-        DeviceCapabilitiesDetector.isMidRangeDevice() -> 2.5
-        else -> 2.0
+        DeviceCapabilitiesDetector.isHighEndDevice() -> 5.0
+        DeviceCapabilitiesDetector.isMidRangeDevice() -> 3.0
+        else -> 2.5
     }
 }
 
@@ -93,7 +93,6 @@ fun OpenStreetMapView(
     onQiblaLineNeedsRedraw: () -> Unit = {},
     onPanStop: (() -> Unit)? = null,
     panelHeight: Int = 0,
-    selectedLocation: MapLocation? = null,
     isMapTypeChanging: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -114,9 +113,6 @@ fun OpenStreetMapView(
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var forceTileReload by remember { mutableStateOf(false) }
-    
-    // --- Qibla Direction State ---
-    var qiblaDirectionState by remember { mutableStateOf(QiblaDirectionState()) }
 
     // Add cleanup when mapType changes
     LaunchedEffect(mapType) {
@@ -333,76 +329,6 @@ fun OpenStreetMapView(
         }
     }
 
-    // --- Calculate Qibla Direction State ---
-    LaunchedEffect(selectedLocation, tileX, tileY, zoom, digitalZoom, showQiblaDirection, isDragging, cumulativePanDistance) {
-        if (showQiblaDirection) {
-            // Calculate viewport bounds for efficient path clipping
-            val viewportBounds = calculateViewportBounds(tileX, tileY, zoom, 800, 800)
-            
-            // Check for fallback configuration
-            val deviceTier = DeviceCapabilitiesDetector.getDeviceTier()
-            val fallbackConfig = QiblaPerformanceMonitor.createFallbackConfig(deviceTier)
-            
-            // Apply fallback settings if needed
-            val isHighPerformanceMode = if (fallbackConfig?.simplifiedCalculations == true) {
-                false // Disable high-performance mode to reduce CPU usage
-            } else {
-                isDragging || digitalZoom > 2.0
-            }
-            
-            val highPrecisionEnabled = if (fallbackConfig?.disableHighPrecisionMode == true) {
-                false // Disable high precision mode to reduce CPU usage
-            } else {
-                digitalZoom > updateConfig.highZoomThreshold
-            }
-            
-            // Calculate Qibla direction state with fallback optimizations
-            selectedLocation?.let { location ->
-                // Determine update frequency based on current state and fallback config
-                val updateFreq = if (fallbackConfig != null) {
-                    when (deviceTier) {
-                        QiblaPerformanceMonitor.DeviceTier.LOW_END -> UpdateFrequency.THROTTLED
-                        QiblaPerformanceMonitor.DeviceTier.MID_RANGE -> UpdateFrequency.STANDARD
-                        else -> UpdateFrequency.HIGH_FREQUENCY
-                    }
-                } else {
-                    when {
-                        enhancedPanState.isHighZoomMode && isDragging -> UpdateFrequency.HIGH_FREQUENCY
-                        digitalZoom > 3f && isDragging -> UpdateFrequency.ULTRA_HIGH_FREQUENCY
-                        !isDragging -> UpdateFrequency.STANDARD
-                        else -> UpdateFrequency.THROTTLED
-                    }
-                }
-                
-                // Use safe calculation with recovery mechanisms
-                val calculationResult = QiblaPerformanceMonitor.safeCalculation(
-                    operationName = "Qibla Direction Calculation",
-                    digitalZoom = digitalZoom.toFloat(),
-                    isHighZoom = digitalZoom > 2.0
-                ) {
-                    qiblaOverlay.calculateDirectionLine(
-                        userLocation = location,
-                        viewportBounds = viewportBounds,
-                        zoomLevel = zoom,
-                        digitalZoom = digitalZoom.toFloat(),
-                        isHighPerformanceMode = isHighPerformanceMode,
-                        highPrecisionMode = highPrecisionEnabled,
-                        updateFrequency = updateFreq
-                    )
-                }
-                
-                qiblaDirectionState = calculationResult ?: QiblaDirectionState(
-                    isVisible = true,
-                    isCalculationValid = false,
-                    errorMessage = "Calculation failed - using recovery mode",
-                    reducedComplexity = true
-                )
-            }
-        } else {
-            qiblaDirectionState = QiblaDirectionState(isVisible = false)
-        }
-    }
-
     Box(
         modifier = modifier
             .background(Color(0xFFE8F5E8))
@@ -526,46 +452,21 @@ fun OpenStreetMapView(
                 }
             }
 
-            // --- Draw Qibla Direction Line (above tiles, below UI controls) ---
+            // --- Draw Qibla Direction Arrow (Simple, aligned with drop pin) ---
             if (showQiblaDirection) {
-                if (qiblaDirectionState.isVisible && qiblaDirectionState.isCalculationValid) {
-                    qiblaOverlay.renderDirectionLine(
-                        drawScope = this,
-                        directionState = qiblaDirectionState,
-                        centerOffset = Offset(centerX, centerY),
-                        tileX = tileX,
-                        tileY = tileY,
-                        zoom = zoom,
-                        digitalZoom = digitalZoom.toFloat(),
-                        mapType = mapType,
-                        selectiveRenderingMode = enhancedPanState.isHighZoomMode && isDragging
-                    )
-                } else if (!qiblaDirectionState.isCalculationValid) {
-                    // Draw error indicator for failed Qibla calculation
-                    val errorColor = Color.Red.copy(alpha = 0.7f)
-                    val warningSize = 20f
-                    
-                    // Draw warning triangle at center
-                    drawCircle(
-                        color = errorColor,
-                        radius = warningSize,
-                        center = Offset(centerX, centerY + 40f),
-                        style = Stroke(width = 3f)
-                    )
-                    
-                    // Draw exclamation mark
-                    drawLine(
-                        color = errorColor,
-                        start = Offset(centerX, centerY + 30f),
-                        end = Offset(centerX, centerY + 45f),
-                        strokeWidth = 3f
-                    )
-                    drawCircle(
-                        color = errorColor,
-                        radius = 2f,
-                        center = Offset(centerX, centerY + 50f)
-                    )
-                }
+                // Get the current coordinate that the drop pin represents
+                val (currentLat, currentLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(
+                    tileX, tileY, zoom
+                )
+                
+                // Render simple Qibla arrow using same anchor point as drop pin
+                qiblaOverlay.renderSimpleQiblaArrow(
+                    drawScope = this,
+                    dropPinCenter = Offset(centerX, centerY), // Same as drop pin
+                    userLatitude = currentLat,
+                    userLongitude = currentLng,
+                    mapType = mapType
+                )
             }
 
             // --- Draw Location Pin (always at the center of the screen) ---
@@ -602,72 +503,6 @@ fun OpenStreetMapView(
                 )
             }
         }
-        
-        // --- Memory Pressure and Performance Indicators ---
-        if (showQiblaDirection && (qiblaDirectionState.hasMemoryPressure || qiblaDirectionState.reducedComplexity)) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 16.dp, top = if (digitalZoomIndicator) 80.dp else 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (qiblaDirectionState.hasMemoryPressure) 
-                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
-                    else 
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    if (qiblaDirectionState.hasMemoryPressure) {
-                        Text(
-                            text = "⚠️ Memory Pressure",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                    if (qiblaDirectionState.reducedComplexity) {
-                        Text(
-                            text = "🔧 Simplified Mode",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (qiblaDirectionState.hasMemoryPressure) 
-                                MaterialTheme.colorScheme.onErrorContainer
-                            else 
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-            }
-        }
-        
-        // --- Qibla Calculation Error Indicator ---
-        if (showQiblaDirection && !qiblaDirectionState.isCalculationValid && qiblaDirectionState.errorMessage != null) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(16.dp)
-                    .widthIn(max = 250.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "⚠️",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text(
-                        text = qiblaDirectionState.errorMessage!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
         // --- UI Elements (Zoom, Info) ---
         val density = LocalDensity.current
         val dynamicTopPadding = with(density) { panelHeight.toDp() + 16.dp }

@@ -37,6 +37,8 @@ object DeviceCapabilitiesDetector {
         isInitialized = true
         
         Timber.d("📱 Device capabilities: Memory Class: ${memoryClass}MB, SDK: ${Build.VERSION.SDK_INT}")
+        Timber.d("📱 Device tier: High-end: $isHighEnd, Mid-range: $isMidRange, Low-end: ${!isHighEnd && !isMidRange}")
+        Timber.d("📱 Max digital zoom factor: ${if (isHighEnd) "5.0f" else if (isMidRange) "3.0f" else "2.5f"}")
     }
 
     /**
@@ -98,9 +100,9 @@ object DeviceCapabilitiesDetector {
     fun getMaxDigitalZoomFactor(): Float {
         checkInitialization()
         return when {
-            deviceCapabilities.isHighEndDevice -> 4.0f
-            deviceCapabilities.isMidRangeDevice -> 2.5f
-            else -> 2.0f
+            deviceCapabilities.isHighEndDevice -> 5.0f
+            deviceCapabilities.isMidRangeDevice -> 3.0f
+            else -> 2.5f
         }
     }
 

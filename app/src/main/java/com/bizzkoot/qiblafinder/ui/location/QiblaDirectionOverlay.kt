@@ -94,6 +94,12 @@ class QiblaDirectionOverlay {
         private const val LINE_ALPHA = 0.9f
         private const val OUTLINE_ALPHA = 0.7f
         
+        // Simplified arrow constants
+        private const val SIMPLE_ARROW_BASE_LENGTH = 100f // Base length for calculation
+        private const val SIMPLE_ARROW_HEAD_LENGTH = 20f // Increased arrowhead size
+        private const val SIMPLE_ARROW_HEAD_ANGLE = 25.0 // degrees
+        private const val ARROW_EDGE_MARGIN = 30f // Margin from screen edge
+        
         // Colors
         private val LINE_COLOR = Color(0xFF4CAF50) // Green
         private val OUTLINE_COLOR_LIGHT = Color.White
@@ -107,7 +113,6 @@ class QiblaDirectionOverlay {
     fun calculateDirectionLineWithPrecision(
         userLocation: PreciseMapCoordinate,
         qiblaLocation: PreciseMapCoordinate,
-        viewportBounds: ViewportBounds,
         zoomLevel: Int,
         digitalZoom: Double,
         isHighPerformanceMode: Boolean = false,
@@ -338,7 +343,7 @@ class QiblaDirectionOverlay {
                         
                         // Apply predictive positioning for high precision mode
                         if (highPrecisionMode && digitalZoom > 2f && updateFrequency == UpdateFrequency.HIGH_FREQUENCY) {
-                            enhanceWithPredictivePositioning(cullResult, viewportBounds, data.bearing)
+                            enhanceWithPredictivePositioning(cullResult, viewportBounds)
                         } else {
                             cullResult
                         }
@@ -1039,8 +1044,7 @@ class QiblaDirectionOverlay {
      */
     private fun enhanceWithPredictivePositioning(
         basePoints: List<MapLocation>,
-        viewportBounds: ViewportBounds,
-        bearing: Double
+        viewportBounds: ViewportBounds
     ): List<MapLocation> {
         if (basePoints.size < 2) return basePoints
         
@@ -1057,7 +1061,6 @@ class QiblaDirectionOverlay {
             val predictionRange = max(latRange, lonRange) * 0.2 // 20% of viewport size
             
             // Add predictive points in likely pan directions
-            val bearingRad = Math.toRadians(bearing)
             val commonPanDirections = listOf(0.0, 90.0, 180.0, 270.0) // N, E, S, W
             
             for (panDirection in commonPanDirections) {
@@ -1133,5 +1136,213 @@ class QiblaDirectionOverlay {
             Timber.w(e, "Simple fallback path creation failed")
             listOf(start) // Return at least the starting point
         }
+    }
+    
+    /**
+     * Calculates the optimal arrow length based on screen size and bearing direction.
+     * Ensures the arrow extends to near the edge of the screen window.
+     * 
+     * @param dropPinCenter The center position of the drop pin
+     * @param bearingRad The bearing in radians
+     * @param canvasWidth The canvas width in pixels
+     * @param canvasHeight The canvas height in pixels
+     * @return The optimal arrow length in pixels
+     */
+    private fun calculateOptimalArrowLength(
+        dropPinCenter: Offset,
+        bearingRad: Double,
+        canvasWidth: Float,
+        canvasHeight: Float
+    ): Float {
+        // Calculate direction vector
+        val directionX = sin(bearingRad).toFloat()
+        val directionY = -cos(bearingRad).toFloat()
+        
+        // Calculate distances to each edge
+        val distanceToRight = if (directionX > 0) (canvasWidth - dropPinCenter.x) / directionX else Float.MAX_VALUE
+        val distanceToLeft = if (directionX < 0) dropPinCenter.x / (-directionX) else Float.MAX_VALUE
+        val distanceToBottom = if (directionY > 0) (canvasHeight - dropPinCenter.y) / directionY else Float.MAX_VALUE
+        val distanceToTop = if (directionY < 0) dropPinCenter.y / (-directionY) else Float.MAX_VALUE
+        
+        // Find the minimum distance to any edge (this is where the arrow would hit the screen boundary)
+        val distanceToEdge = minOf(
+            distanceToRight,
+            distanceToLeft,
+            distanceToBottom,
+            distanceToTop
+        )
+        
+        // Use 85% of the distance to edge, with margin
+        val maxLength = (distanceToEdge * 0.85f) - ARROW_EDGE_MARGIN
+        
+        // Ensure minimum and maximum reasonable lengths
+        return maxLength.coerceIn(SIMPLE_ARROW_BASE_LENGTH, minOf(canvasWidth, canvasHeight) * 0.8f)
+    }
+    
+    /**
+     * Renders a simple Qibla arrow using the same anchor point as the drop pin.
+     * This ensures perfect alignment between the pin and arrow base.
+     * Uses Great Circle calculations for accurate bearing.
+     * 
+     * @param drawScope The Canvas DrawScope for rendering
+     * @param dropPinCenter The center position of the drop pin (same anchor point)
+     * @param userLatitude The user's current latitude
+     * @param userLongitude The user's current longitude
+     * @param mapType The current map type for styling
+     */
+    fun renderSimpleQiblaArrow(
+        drawScope: DrawScope,
+        dropPinCenter: Offset,
+        userLatitude: Double,
+        userLongitude: Double,
+        mapType: MapType
+    ) {
+        with(drawScope) {
+            try {
+                // Calculate Qibla bearing using Great Circle method
+                val bearingResult = GeodesyUtils.calculateQiblaBearingSafe(userLatitude, userLongitude)
+                
+                when (bearingResult) {
+                    is GeodesyResult.Success -> {
+                        val qiblaBearing = bearingResult.data
+                        
+                        // Convert bearing to radians (bearing is from North, clockwise)
+                        val bearingRad = Math.toRadians(qiblaBearing)
+                        
+                        // Calculate optimal arrow length that extends to near screen edge
+                        val optimalArrowLength = calculateOptimalArrowLength(
+                            dropPinCenter, bearingRad, size.width, size.height
+                        )
+                        
+                        // Calculate arrow tip position from drop pin center
+                        val arrowTipX = dropPinCenter.x + (optimalArrowLength * sin(bearingRad)).toFloat()
+                        val arrowTipY = dropPinCenter.y - (optimalArrowLength * cos(bearingRad)).toFloat()
+                        val arrowTip = Offset(arrowTipX, arrowTipY)
+                        
+                        // Determine colors based on map type
+                        val outlineColor = when (mapType) {
+                            MapType.SATELLITE -> OUTLINE_COLOR_LIGHT
+                            MapType.STREET -> OUTLINE_COLOR_DARK
+                        }
+                        
+                        // Draw arrow shaft (outline)
+                        drawLine(
+                            color = outlineColor.copy(alpha = OUTLINE_ALPHA),
+                            start = dropPinCenter,
+                            end = arrowTip,
+                            strokeWidth = OUTLINE_WIDTH_DP * density
+                        )
+                        
+                        // Draw arrow shaft (main line)
+                        drawLine(
+                            color = LINE_COLOR.copy(alpha = LINE_ALPHA),
+                            start = dropPinCenter,
+                            end = arrowTip,
+                            strokeWidth = LINE_WIDTH_DP * density
+                        )
+                        
+                        // Draw arrowhead
+                        drawSimpleArrowHead(arrowTip, bearingRad, outlineColor)
+                        
+                        Timber.d("📍 Simple Qibla arrow rendered: bearing=${String.format("%.1f", qiblaBearing)}°, length=${String.format("%.0f", optimalArrowLength)}px, from=${dropPinCenter}, to=${arrowTip}")
+                        
+                    }
+                    is GeodesyResult.Error -> {
+                        // Draw error indicator at drop pin center
+                        drawCircle(
+                            color = Color.Red.copy(alpha = 0.7f),
+                            radius = 20f,
+                            center = dropPinCenter,
+                            style = Stroke(width = 3f)
+                        )
+                        
+                        // Draw X mark
+                        val crossSize = 12f
+                        drawLine(
+                            color = Color.Red,
+                            start = Offset(dropPinCenter.x - crossSize, dropPinCenter.y - crossSize),
+                            end = Offset(dropPinCenter.x + crossSize, dropPinCenter.y + crossSize),
+                            strokeWidth = 3f
+                        )
+                        drawLine(
+                            color = Color.Red,
+                            start = Offset(dropPinCenter.x + crossSize, dropPinCenter.y - crossSize),
+                            end = Offset(dropPinCenter.x - crossSize, dropPinCenter.y + crossSize),
+                            strokeWidth = 3f
+                        )
+                        
+                        Timber.w("📍 Qibla calculation error: ${bearingResult.message}")
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "📍 Error rendering simple Qibla arrow")
+                
+                // Draw fallback error indicator
+                drawCircle(
+                    color = Color.Red.copy(alpha = 0.5f),
+                    radius = 15f,
+                    center = dropPinCenter,
+                    style = Stroke(width = 2f)
+                )
+            }
+        }
+    }
+    
+    /**
+     * Draws a simple arrowhead at the tip of the arrow.
+     * 
+     * @param arrowTip The position of the arrow tip
+     * @param bearingRad The bearing in radians
+     * @param outlineColor The outline color for the arrowhead
+     */
+    private fun DrawScope.drawSimpleArrowHead(
+        arrowTip: Offset,
+        bearingRad: Double,
+        outlineColor: Color
+    ) {
+        val headAngleRad = Math.toRadians(SIMPLE_ARROW_HEAD_ANGLE)
+        
+        // Calculate arrowhead points
+        val leftAngle = bearingRad - headAngleRad + Math.PI
+        val rightAngle = bearingRad + headAngleRad + Math.PI
+        
+        val leftPoint = Offset(
+            arrowTip.x + (SIMPLE_ARROW_HEAD_LENGTH * sin(leftAngle)).toFloat(),
+            arrowTip.y - (SIMPLE_ARROW_HEAD_LENGTH * cos(leftAngle)).toFloat()
+        )
+        
+        val rightPoint = Offset(
+            arrowTip.x + (SIMPLE_ARROW_HEAD_LENGTH * sin(rightAngle)).toFloat(),
+            arrowTip.y - (SIMPLE_ARROW_HEAD_LENGTH * cos(rightAngle)).toFloat()
+        )
+        
+        // Draw arrowhead outline
+        drawLine(
+            color = outlineColor.copy(alpha = OUTLINE_ALPHA),
+            start = arrowTip,
+            end = leftPoint,
+            strokeWidth = OUTLINE_WIDTH_DP * density
+        )
+        drawLine(
+            color = outlineColor.copy(alpha = OUTLINE_ALPHA),
+            start = arrowTip,
+            end = rightPoint,
+            strokeWidth = OUTLINE_WIDTH_DP * density
+        )
+        
+        // Draw arrowhead main lines
+        drawLine(
+            color = LINE_COLOR.copy(alpha = LINE_ALPHA),
+            start = arrowTip,
+            end = leftPoint,
+            strokeWidth = LINE_WIDTH_DP * density
+        )
+        drawLine(
+            color = LINE_COLOR.copy(alpha = LINE_ALPHA),
+            start = arrowTip,
+            end = rightPoint,
+            strokeWidth = LINE_WIDTH_DP * density
+        )
     }
 }

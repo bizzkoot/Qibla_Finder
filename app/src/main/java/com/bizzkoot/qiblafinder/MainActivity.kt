@@ -7,14 +7,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.bizzkoot.qiblafinder.model.LocationRepository
@@ -45,25 +47,54 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Enable true fullscreen immersive mode
         enableEdgeToEdge()
+        
+        // Hide system UI completely for true fullscreen
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // Android 11+ (API 30+) - Use WindowInsetsController
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(android.view.WindowInsets.Type.systemBars())
+                controller.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            // Android 10 and below - Use system UI flags
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
         
         // Initialize enhanced download manager
         enhancedDownloadManager = EnhancedDownloadManager(this)
         
-        Timber.d("🎯 MainActivity - onCreate() called")
+        Timber.d("🎯 MainActivity - onCreate() called with edge-to-edge")
         setContent {
             QiblaFinderTheme {
+                // Create a full-screen surface that handles insets properly
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val updateUiState by updateNotificationViewModel.uiState.collectAsState()
+                    
+                    // Main content box - let individual screens handle their own insets
                     Box(modifier = Modifier.fillMaxSize()) {
                         QiblaApp(updateNotificationViewModel, enhancedDownloadManager)
+                        
+                        // Update notification positioned properly with insets
                         if (updateUiState.showNotification) {
                             updateUiState.updateInfo?.let { updateInfo ->
                                 EnhancedUpdateNotificationBanner(
-                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter),
                                     updateInfo = updateInfo,
                                     downloadState = updateUiState.downloadState,
                                     onDismiss = { updateNotificationViewModel.dismissUpdate() },
@@ -79,6 +110,33 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Re-hide system UI when app regains focus
+            hideSystemUI()
+        }
+    }
+    
+    private fun hideSystemUI() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.insetsController?.let { controller ->
+                controller.hide(android.view.WindowInsets.Type.systemBars())
+                controller.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // The DownloadManager handles cleanup automatically

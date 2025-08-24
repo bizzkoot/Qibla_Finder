@@ -58,32 +58,38 @@
 
 ---
 
-## ✨ Latest Features (v2.3.0) 🎉
+## ✨ Latest Features (v2.4.3) 🎉
 
 <div align="center">
   <table>
     <tr>
       <td align="center" width="50%">
-        <strong>🎯 Qibla Direction Line on Map</strong><br>
-        <em>NEW! Real-time Qibla direction visualization on manual location map with accurate geodesic calculations</em>
+        <strong>🎯 Enhanced Digital Zoom & Arrow Alignment</strong><br>
+        <em>NEW! Improved digital zoom limits with enhanced Qibla arrow precision and high-accuracy coordinate system</em>
       </td>
       <td align="center" width="50%">
-        <strong>📍 Dynamic Zoom Button Positioning</strong><br>
-        <em>Smart zoom buttons that automatically position themselves based on UI panel height across all screen densities</em>
+        <strong>🗺️ Satellite Map Loading Fixes</strong><br>
+        <em>Resolved map type switching issues with improved tile loading and state management for seamless transitions</em>
       </td>
     </tr>
     <tr>
       <td align="center">
-        <strong>🔄 Reliable Map Type Switching</strong><br>
-        <em>Enhanced map switching between Street and Satellite views with improved state management and tile loading</em>
+        <strong>🎯 Precise Qibla Arrow Alignment</strong><br>
+        <em>Implemented high-precision coordinate system for ultra-accurate Qibla direction calculations and display</em>
       </td>
       <td align="center">
-        <strong>⚡ Performance Optimizations</strong><br>
-        <em>Faster map interactions, optimized memory usage, and smooth 60fps rendering during all operations</em>
+        <strong>🔧 Build System Improvements</strong><br>
+        <em>Cleaned up dependencies and resolved build configuration issues for better stability and performance</em>
       </td>
     </tr>
   </table>
 </div>
+
+### Previous Features (v2.3.0)
+- **🎯 Qibla Direction Line on Map** - Real-time Qibla direction visualization on manual location map with accurate geodesic calculations
+- **📍 Dynamic Zoom Button Positioning** - Smart zoom buttons that automatically position themselves based on UI panel height across all screen densities  
+- **🔄 Reliable Map Type Switching** - Enhanced map switching between Street and Satellite views with improved state management and tile loading
+- **⚡ Performance Optimizations** - Faster map interactions, optimized memory usage, and smooth 60fps rendering during all operations
 
 ### Previous Features (v2.2.x)
 - **🔄 Manual Update Check** - Check for app updates anytime with real-time status feedback
@@ -93,45 +99,31 @@
 
 ---
 
+## 🎬 App Demo
+
+<div align="center">
+  <video width="300" controls style="border-radius: 15px; box-shadow: 0 8px 16px rgba(0,0,0,0.2);">
+    <source src="assets/videos/Qibla App.webm" type="video/webm">
+    Your browser does not support the video tag.
+  </video>
+  <br>
+  <em>See the Qibla Finder app in action - from compass navigation to AR mode!</em>
+</div>
+
+---
+
 ## 📱 App Screenshots
 
 <div align="center">
-  <table>
-    <tr>
-      <td align="center">
-        <img src="assets/images/screenshots/Compass with GPS.jpg" alt="Main Compass with GPS" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>Main Compass</strong><br>
-        <em>Find your direction using GPS location</em>
-      </td>
-      <td align="center">
-        <img src="assets/images/screenshots/AR.jpg" alt="Augmented Reality Mode" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>AR Camera Mode</strong><br>
-        <em>Point your camera for real-time guidance</em>
-      </td>
-      <td align="center">
-        <img src="assets/images/screenshots/Compass with Manual Location.jpg" alt="Manual Location Setting" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>Manual Location</strong><br>
-        <em>Set your location when GPS is unavailable</em>
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <img src="assets/images/screenshots/Manual Location Adjustment.jpg" alt="Location Adjustment" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>Location Adjustment</strong><br>
-        <em>Fine-tune your position on the map</em>
-      </td>
-      <td align="center">
-        <img src="assets/images/screenshots/Calibrate Compass.jpg" alt="Compass Calibration" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>Compass Calibration</strong><br>
-        <em>Ensure accurate compass readings</em>
-      </td>
-      <td align="center">
-        <img src="assets/images/screenshots/Help and Support.jpg" alt="Help and Support Screen" width="200" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <br><strong>Help & Support</strong><br>
-        <em>Check for updates, access GitHub, and get help</em>
-      </td>
-    </tr>
-  </table>
+
+| Main Compass | AR Camera Mode | Manual Location |
+|:---:|:---:|:---:|
+| <img src="assets/images/screenshots/Compass with GPS.jpg" width="200"><br>**Find your direction using GPS** | <img src="assets/images/screenshots/AR.jpg" width="200"><br>**Real-time camera guidance** | <img src="assets/images/screenshots/Compass with Manual Location.jpg" width="200"><br>**Set location when GPS unavailable** |
+
+| Location Adjustment | Compass Calibration | Help & Support |
+|:---:|:---:|:---:|
+| <img src="assets/images/screenshots/Manual Location Adjustment.jpg" width="200"><br>**Fine-tune your position** | <img src="assets/images/screenshots/Calibrate Compass.jpg" width="200"><br>**Ensure accurate readings** | <img src="assets/images/screenshots/Help and Support.jpg" width="200"><br>**Updates and help** |
+
 </div>
 
 ---

@@ -9,6 +9,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +52,14 @@ data class EnhancedPanState(
     val digitalZoomFactor: Double = 1.0,
     val panDistanceThreshold: Double = 10.0,
     val timeBasedUpdateInterval: Long = 16L // 60fps target
+)
+
+// State for out-of-bounds detection and refresh functionality
+data class OutOfBoundsState(
+    val isOutOfBounds: Boolean = false,
+    val showRefreshButton: Boolean = false,
+    val lastKnownGoodPosition: Pair<Double, Double>? = null,
+    val lastKnownGoodZoom: Int = 18
 )
 
 // Configuration for digital zoom updates
@@ -107,6 +124,11 @@ fun OpenStreetMapView(
     var digitalZoom by remember { mutableStateOf(1.0) }
     var isTileLoadingPaused by remember { mutableStateOf(false) }
     var digitalZoomIndicator by remember { mutableStateOf(false) }
+    
+    // --- Out-of-bounds and refresh state ---
+    var outOfBoundsState by remember { mutableStateOf(OutOfBoundsState()) }
+    var showDigitalZoomAlert by remember { mutableStateOf(false) }
+    var alertDismissJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     // --- Tile Cache & Loading State ---
     var tileStateCache by remember(mapType) { mutableStateOf<Map<String, TileLoadState>>(emptyMap()) }
@@ -165,7 +187,22 @@ fun OpenStreetMapView(
 
     // --- Digital Zoom Optimization ---
     LaunchedEffect(digitalZoom) {
+        val wasInDigitalZoom = isTileLoadingPaused
         isTileLoadingPaused = digitalZoom > 1.0
+        
+        // Show alert when entering digital zoom mode
+        if (!wasInDigitalZoom && isTileLoadingPaused) {
+            showDigitalZoomAlert = true
+            alertDismissJob?.cancel()
+            alertDismissJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                kotlinx.coroutines.delay(4000) // Auto dismiss after 4 seconds
+                showDigitalZoomAlert = false
+            }
+        } else if (wasInDigitalZoom && !isTileLoadingPaused) {
+            // Hide alert when exiting digital zoom
+            showDigitalZoomAlert = false
+            alertDismissJob?.cancel()
+        }
     }
 
     // --- Performance Monitoring ---
@@ -256,6 +293,14 @@ fun OpenStreetMapView(
         val bufferSize = tileManager.getBufferSizeBasedOnConnection()
         val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, mapType, bufferSize)
         val allTiles = visibleTiles + bufferTiles
+        
+        // Store last known good position when we have tiles and are not in digital zoom
+        if (digitalZoom <= 1.0) {
+            outOfBoundsState = outOfBoundsState.copy(
+                lastKnownGoodPosition = Pair(tileX, tileY),
+                lastKnownGoodZoom = zoom
+            )
+        }
 
         allTiles.forEach { tile ->
             val cacheKey = tile.toCacheKey()
@@ -273,6 +318,75 @@ fun OpenStreetMapView(
         if (forceTileReload) {
             forceTileReload = false
             Timber.d("📍 Force tile reload completed, flag reset")
+        }
+    }
+
+    // --- Out-of-bounds Detection (runs independently of tile loading) ---
+    LaunchedEffect(tileX, tileY, zoom, digitalZoom, mapType, tileStateCache) {
+        // Only check for out-of-bounds during digital zoom
+        if (digitalZoom <= 1.0) {
+            // Reset out-of-bounds state when not in digital zoom
+            if (outOfBoundsState.isOutOfBounds || outOfBoundsState.showRefreshButton) {
+                outOfBoundsState = outOfBoundsState.copy(
+                    isOutOfBounds = false,
+                    showRefreshButton = false
+                )
+                Timber.d("📍 Out-of-bounds state reset - exited digital zoom")
+            }
+            return@LaunchedEffect
+        }
+        
+        // Calculate tiles needed for current viewport position
+        val (visibleTiles, _) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, mapType, 0.0)
+        
+        // Check if any visible tiles for the current position are available in cache
+        var tilesAvailable = 0
+        var tilesLoaded = 0
+        
+        visibleTiles.forEach { tile ->
+            val cacheKey = tile.toCacheKey()
+            val tileState = tileStateCache[cacheKey]
+            tilesAvailable++
+            
+            when (tileState) {
+                is TileLoadState.HighRes, is TileLoadState.LowRes -> {
+                    tilesLoaded++
+                    Timber.v("📍 Tile available: ${tile.x},${tile.y} at zoom ${tile.zoom}")
+                }
+                is TileLoadState.Loading -> {
+                    Timber.v("📍 Tile loading: ${tile.x},${tile.y} at zoom ${tile.zoom}")
+                }
+                is TileLoadState.Failed -> {
+                    Timber.v("📍 Tile failed: ${tile.x},${tile.y} at zoom ${tile.zoom}")
+                }
+                null -> {
+                    Timber.v("📍 Tile not in cache: ${tile.x},${tile.y} at zoom ${tile.zoom}")
+                }
+            }
+        }
+        
+        // Calculate the percentage of loaded tiles
+        val loadedPercentage = if (tilesAvailable > 0) tilesLoaded.toDouble() / tilesAvailable else 0.0
+        val hasEnoughTiles = loadedPercentage >= 0.1 // At least 10% of tiles should be available
+        
+        // Determine if we're out of bounds
+        val isCurrentlyOutOfBounds = !hasEnoughTiles
+        val shouldShowRefreshButton = isCurrentlyOutOfBounds && digitalZoom > 1.0
+        
+        Timber.d("📍 Out-of-bounds check: digitalZoom=${String.format("%.1f", digitalZoom)}, " +
+                "tilesLoaded=$tilesLoaded/$tilesAvailable (${String.format("%.1f", loadedPercentage * 100)}%), " +
+                "outOfBounds=$isCurrentlyOutOfBounds, showRefresh=$shouldShowRefreshButton")
+        
+        // Update out-of-bounds state if changed
+        if (isCurrentlyOutOfBounds != outOfBoundsState.isOutOfBounds || 
+            shouldShowRefreshButton != outOfBoundsState.showRefreshButton) {
+            
+            outOfBoundsState = outOfBoundsState.copy(
+                isOutOfBounds = isCurrentlyOutOfBounds,
+                showRefreshButton = shouldShowRefreshButton
+            )
+            
+            Timber.i("📍 Out-of-bounds state updated: outOfBounds=$isCurrentlyOutOfBounds, showRefreshButton=$shouldShowRefreshButton")
         }
     }
 
@@ -346,6 +460,10 @@ fun OpenStreetMapView(
                             digitalZoomFactor = digitalZoom,
                             panDistanceThreshold = calculateZoomAdaptiveThreshold(digitalZoom, updateConfig)
                         )
+                        
+                        if (digitalZoom > 1.0) {
+                            Timber.d("📍 Drag started in digital zoom mode (${String.format("%.1f", digitalZoom)}x) at position: tileX=${String.format("%.3f", tileX)}, tileY=${String.format("%.3f", tileY)}")
+                        }
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
@@ -393,6 +511,11 @@ fun OpenStreetMapView(
                         
                         // Trigger tile loading after drag ends
                         lastDragPosition = Pair(tileX, tileY)
+                        
+                        if (digitalZoom > 1.0) {
+                            Timber.d("📍 Drag ended in digital zoom mode (${String.format("%.1f", digitalZoom)}x) at final position: tileX=${String.format("%.3f", tileX)}, tileY=${String.format("%.3f", tileY)}")
+                        }
+                        
                         // Trigger progressive auto-refresh
                         onPanStop?.invoke()
                     }
@@ -503,6 +626,107 @@ fun OpenStreetMapView(
                 )
             }
         }
+        
+        // --- Map Refresh Button (when out of bounds in digital zoom) ---
+        if (outOfBoundsState.showRefreshButton) {
+            FloatingActionButton(
+                onClick = {
+                    Timber.i("📍 Refresh button clicked - returning to last good position")
+                    
+                    // Gracefully return to normal zoom and last good position
+                    outOfBoundsState.lastKnownGoodPosition?.let { (lastTileX, lastTileY) ->
+                        Timber.d("📍 Restoring position: tileX=${String.format("%.3f", lastTileX)}, tileY=${String.format("%.3f", lastTileY)}, zoom=${outOfBoundsState.lastKnownGoodZoom}")
+                        
+                        tileX = lastTileX
+                        tileY = lastTileY
+                        zoom = outOfBoundsState.lastKnownGoodZoom
+                        digitalZoom = 1.0
+                        digitalZoomIndicator = false
+                        
+                        // Convert back to location and notify
+                        val (newLat, newLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(tileX, tileY, zoom)
+                        onLocationSelected(MapLocation(newLat, newLng))
+                        
+                        // Reset out of bounds state
+                        outOfBoundsState = outOfBoundsState.copy(
+                            isOutOfBounds = false,
+                            showRefreshButton = false
+                        )
+                        
+                        Timber.i("📍 Successfully returned to last good position: lat=${String.format("%.6f", newLat)}, lng=${String.format("%.6f", newLng)}")
+                    } ?: run {
+                        // Fallback: just exit digital zoom if no last good position is available
+                        Timber.w("📍 No last good position available - just exiting digital zoom")
+                        digitalZoom = 1.0
+                        digitalZoomIndicator = false
+                        
+                        outOfBoundsState = outOfBoundsState.copy(
+                            isOutOfBounds = false,
+                            showRefreshButton = false
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = (-50).dp),
+                containerColor = MaterialTheme.colorScheme.primary
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Refresh,
+                        contentDescription = "Refresh Map",
+                        tint = Color.White
+                    )
+                    Text(
+                        text = "Return to Map",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+        
+        // --- Transparent Auto-Dismissing Alert for Digital Zoom ---
+        if (showDigitalZoomAlert) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures {
+                            showDigitalZoomAlert = false
+                            alertDismissJob?.cancel()
+                        }
+                    },
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Info,
+                        contentDescription = "Info",
+                        tint = MaterialTheme.colorScheme.inverseOnSurface,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Digital zoom active - tile downloads paused",
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+        
         // --- UI Elements (Zoom, Info) ---
         val density = LocalDensity.current
         val dynamicTopPadding = with(density) { panelHeight.toDp() + 16.dp }

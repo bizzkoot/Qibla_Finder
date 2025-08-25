@@ -45,7 +45,9 @@ class EnhancedDownloadManager(private val context: Context) {
             val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
                 setTitle("Qibla Finder Update")
                 setDescription("Downloading version $versionName...")
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                // Use VISIBILITY_VISIBLE instead of VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                // This shows progress but doesn't persist completion notification
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                 setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI or 
@@ -212,28 +214,41 @@ class EnhancedDownloadManager(private val context: Context) {
     
     fun installApk(fileUri: String) {
         try {
-            val file = File(Uri.parse(fileUri).path ?: return)
+            Timber.d("installApk() called with fileUri: $fileUri")
+            val file = File(Uri.parse(fileUri).path ?: run {
+                Timber.e("FileUri path is null: $fileUri")
+                _downloadState.value = DownloadState.Error("Invalid file URI")
+                return
+            })
+            
+            Timber.d("File path resolved to: ${file.absolutePath}")
+            Timber.d("File exists: ${file.exists()}")
             if (!file.exists()) {
-                _downloadState.value = DownloadState.Error("APK file not found")
+                Timber.e("APK file not found at: ${file.absolutePath}")
+                _downloadState.value = DownloadState.Error("APK file not found at ${file.absolutePath}")
                 return
             }
             
+            Timber.d("File size: ${file.length()} bytes")
             val apkUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
                 file
             )
+            Timber.d("FileProvider URI created: $apkUri")
             
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
             
+            Timber.d("Starting install intent with URI: $apkUri")
             context.startActivity(installIntent)
-            Timber.i("Installation intent started")
+            Timber.i("Installation intent started successfully")
             
         } catch (e: Exception) {
-            Timber.e(e, "Failed to install APK")
+            Timber.e(e, "Failed to install APK: ${e.message}")
+            Timber.e(e, "Full stack trace:", e)
             _downloadState.value = DownloadState.Error("Failed to install: ${e.message}")
         }
     }

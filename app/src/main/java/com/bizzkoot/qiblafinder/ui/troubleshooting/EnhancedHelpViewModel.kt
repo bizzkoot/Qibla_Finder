@@ -106,35 +106,42 @@ class EnhancedHelpViewModel(
     fun downloadUpdate() {
         viewModelScope.launch {
             try {
-                val updateInfo = updateRepository.checkForUpdates(forceCheck = false)
-                if (updateInfo != null) {
-                    downloadManager.startDownload(
-                        downloadUrl = updateInfo.downloadUrl,
-                        fileName = "qibla-finder-${updateInfo.newVersion}.apk",
-                        versionName = updateInfo.newVersion
-                    )
-                    Timber.d("Download started from Help screen")
+                // Use the current updateCheckState instead of re-checking
+                val currentState = _updateCheckState.value
+                if (currentState.hasUpdate && currentState.newVersion != null) {
+                    // If we have update info but need the download URL, check again with force
+                    val updateInfo = updateRepository.checkForUpdates(forceCheck = true)
+                    if (updateInfo != null) {
+                        downloadManager.startDownload(
+                            downloadUrl = updateInfo.downloadUrl,
+                            fileName = "qibla-finder-${updateInfo.newVersion}.apk",
+                            versionName = updateInfo.newVersion
+                        )
+                        Timber.d("Download started for version: ${updateInfo.newVersion}")
+                    } else {
+                        Timber.w("No update info available for download")
+                    }
                 } else {
-                    Timber.w("No update info available for download")
+                    Timber.d("No update available, triggering update check")
+                    // Force check for updates if we don't have any update info
+                    checkForUpdates(forceCheck = true)
                 }
             } catch (e: Exception) {
-                Timber.e(e, "Failed to start download from Help screen")
+                Timber.e(e, "Failed to start download")
             }
         }
     }
     
     fun cancelDownload() {
         downloadManager.cancelDownload()
-        Timber.d("Download cancelled from Help screen")
     }
     
     fun installUpdate() {
         val currentDownloadState = downloadState.value
         if (currentDownloadState is DownloadState.Completed) {
             downloadManager.installApk(currentDownloadState.fileUri)
-            Timber.d("Install triggered from Help screen with fileUri: ${currentDownloadState.fileUri}")
         } else {
-            Timber.w("Cannot install: download not completed. Current state: $currentDownloadState")
+            Timber.w("Cannot install: download not completed. Current state: ${currentDownloadState.javaClass.simpleName}")
         }
     }
 }

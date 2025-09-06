@@ -1,6 +1,12 @@
 package com.bizzkoot.qiblafinder.ui.troubleshooting
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -112,11 +118,15 @@ fun EnhancedTroubleshootingScreen(
     )
     
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         // Top App Bar
         TopAppBar(
             title = { Text("Help & Support") },
+            windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
             navigationIcon = {
                 IconButton(onClick = onBackPressed) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")

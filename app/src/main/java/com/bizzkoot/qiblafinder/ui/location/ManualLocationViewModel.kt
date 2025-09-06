@@ -20,6 +20,8 @@ import timber.log.Timber
 data class ManualLocationUiState(
     val selectedLocation: MapLocation? = null,
     val currentLocation: MapLocation? = null,
+    val initialLocation: MapLocation? = null,
+    val recenterTo: MapLocation? = null,
     val accuracyInMeters: Int = 0,
     val tileCount: Int = 0,
     val cacheSizeMB: Double = 0.0,
@@ -34,11 +36,18 @@ data class ManualLocationUiState(
     val needsQiblaRedraw: Boolean = false,
     val panelHeight: Int = 0, // New field for dynamic positioning
     val lastMapType: MapType? = null,
-    val isMapTypeChanging: Boolean = false
+    val isMapTypeChanging: Boolean = false,
+    // Search state
+    val searchAvailable: Boolean = true,
+    val searchQuery: String = "",
+    val isSearching: Boolean = false,
+    val searchResults: List<GeocodingResult> = emptyList(),
+    val searchError: String? = null
 )
 
 class ManualLocationViewModel(
-    private val locationRepository: LocationRepository
+    private val locationRepository: LocationRepository,
+    private val geocodingService: GeocodingService? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ManualLocationUiState())
@@ -76,6 +85,11 @@ class ManualLocationViewModel(
     init {
         Timber.d("📍 ManualLocationViewModel - Initializing ViewModel")
         loadInitialLocation()
+        // Initialize search availability
+        val available = try {
+            geocodingService?.isAvailable() ?: false
+        } catch (_: Exception) { false }
+        _uiState.value = _uiState.value.copy(searchAvailable = available)
     }
 
     private fun loadInitialLocation() {
@@ -95,6 +109,7 @@ class ManualLocationViewModel(
                 )
                 _uiState.value = _uiState.value.copy(
                     currentLocation = location,
+                    initialLocation = _uiState.value.initialLocation ?: location,
                     selectedLocation = location,
                     isLoading = false,
                     error = null
@@ -106,6 +121,7 @@ class ManualLocationViewModel(
                 val fallbackLocation = MapLocation(3.1390, 101.6869) // Kuala Lumpur
                 _uiState.value = _uiState.value.copy(
                     currentLocation = fallbackLocation,
+                    initialLocation = _uiState.value.initialLocation ?: fallbackLocation,
                     selectedLocation = fallbackLocation,
                     isLoading = false,
                     error = "Could not get GPS location. Using fallback (Kuala Lumpur)."
@@ -156,6 +172,84 @@ class ManualLocationViewModel(
     fun refreshLocation() {
         Timber.d("📍 ManualLocationViewModel - Refreshing location")
         loadInitialLocation()
+    }
+
+    fun centerToInitialLocation() {
+        val init = _uiState.value.initialLocation
+        if (init != null) {
+            _uiState.value = _uiState.value.copy(
+                recenterTo = init,
+                error = null
+            )
+            Timber.d("📍 Recenter request issued to: $init")
+        } else {
+            Timber.w("📍 No initial location snapshot available; attempting to reload initial location")
+            refreshLocation()
+        }
+    }
+
+    fun consumeRecenter() {
+        _uiState.value = _uiState.value.copy(recenterTo = null)
+    }
+
+    fun updateSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+    }
+
+    fun performSearch() {
+        val service = geocodingService
+        if (service == null || !service.isAvailable()) {
+            _uiState.value = _uiState.value.copy(
+                searchError = "Search unavailable on this device",
+                isSearching = false,
+                searchResults = emptyList()
+            )
+            return
+        }
+
+        val query = _uiState.value.searchQuery.trim()
+        if (query.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                searchError = "Enter a place or address",
+                searchResults = emptyList(),
+                isSearching = false
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSearching = true, searchError = null, searchResults = emptyList())
+            try {
+                val center = _uiState.value.selectedLocation ?: _uiState.value.currentLocation
+                val result = service.search(query = query, center = center, limit = 5)
+                val list = result.getOrElse { emptyList() }
+                _uiState.value = _uiState.value.copy(
+                    isSearching = false,
+                    searchResults = list,
+                    searchError = if (list.isEmpty()) "No results found" else null
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "📍 Search failed")
+                _uiState.value = _uiState.value.copy(
+                    isSearching = false,
+                    searchResults = emptyList(),
+                    searchError = e.message ?: "Search failed"
+                )
+            }
+        }
+    }
+
+    fun chooseSearchResult(result: GeocodingResult) {
+        val loc = result.location
+        _uiState.value = _uiState.value.copy(
+            selectedLocation = loc,
+            currentLocation = loc,
+            searchResults = emptyList(),
+            searchQuery = "",
+            searchError = null
+        )
+        updateQiblaInfo(loc)
+        Timber.d("📍 Search result chosen: ${loc}")
     }
 
     fun updateMapType(mapType: MapType) {

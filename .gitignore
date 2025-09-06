@@ -167,3 +167,9 @@ specs/
 
 # Analysis and improvement documentation
 IMPROVEMENT_ANALYSIS.md
+
+# Custom ignore rules
+AGENTS.md
+install_codex_aliases.sh
+codex/*
+codex/

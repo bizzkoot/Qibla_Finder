@@ -1,6 +1,12 @@
 package com.bizzkoot.qiblafinder.ui.location
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -15,6 +21,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
@@ -25,6 +32,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,10 +80,14 @@ fun ManualLocationScreen(
         Timber.d("📍 ManualLocationScreen - UI State updated: isLoading=${uiState.isLoading}, error=${uiState.error}, currentLocation=${uiState.currentLocation}, mapType=${uiState.selectedMapType}")
     }
 
+    var showSearchSheet by remember { mutableStateOf(false) }
+
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Manual Location Adjustment") },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
                 navigationIcon = {
                     IconButton(onClick = onBackPressed) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -81,10 +95,16 @@ fun ManualLocationScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = { viewModel.refreshLocation() },
+                        onClick = { showSearchSheet = true },
+                        enabled = uiState.searchAvailable
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Search location")
+                    }
+                    IconButton(
+                        onClick = { viewModel.centerToInitialLocation() },
                         enabled = !uiState.isLoading
                     ) {
-                        Icon(Icons.Default.LocationOn, contentDescription = "Refresh location")
+                        Icon(Icons.Default.LocationOn, contentDescription = "Recenter to initial GPS")
                     }
                     MapTypeToggle(
                         selectedMapType = uiState.selectedMapType,
@@ -94,7 +114,7 @@ fun ManualLocationScreen(
                 }
             )
         }
-    ) { paddingValues ->
+        ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -155,9 +175,11 @@ fun ManualLocationScreen(
                 val currentLocation = uiState.currentLocation ?: MapLocation(3.1390, 101.6869) // Fallback
                 OpenStreetMapView(
                     currentLocation = currentLocation,
+                    recenterTo = uiState.recenterTo,
                     onLocationSelected = { mapLocation ->
                         viewModel.updateSelectedLocation(mapLocation)
                     },
+                    onRecenterConsumed = { viewModel.consumeRecenter() },
                     onAccuracyChanged = { accuracy ->
                         viewModel.updateAccuracy(accuracy)
                     },
@@ -181,7 +203,7 @@ fun ManualLocationScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
                 ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -316,6 +338,7 @@ fun ManualLocationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
             ) {
@@ -378,6 +401,19 @@ fun ManualLocationScreen(
             }
         }
     }
+
+    if (showSearchSheet) {
+        SearchBottomSheet(
+            uiState = uiState,
+            onDismiss = { showSearchSheet = false },
+            onQueryChange = { viewModel.updateSearchQuery(it) },
+            onSearch = { viewModel.performSearch() },
+            onResultChosen = { result ->
+                viewModel.chooseSearchResult(result)
+                showSearchSheet = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -421,6 +457,80 @@ fun MapTypeToggle(
                     }
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchBottomSheet(
+    uiState: ManualLocationUiState,
+    onDismiss: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onResultChosen: (GeocodingResult) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(text = "Search Location", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = uiState.searchQuery,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("e.g. Masjid Negara") },
+                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearch() })
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (uiState.searchError != null) {
+                    Text(
+                        text = uiState.searchError,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(0.dp))
+                }
+                Button(onClick = onSearch, enabled = !uiState.isSearching && uiState.searchQuery.isNotBlank()) {
+                    if (uiState.isSearching) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text("Search")
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (uiState.isSearching) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            val results = uiState.searchResults
+            if (!uiState.isSearching && results.isEmpty() && uiState.searchError == null && uiState.searchQuery.isNotBlank()) {
+                Text("No results", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+
+            results.take(5).forEach { res ->
+                ListItem(
+                    headlineContent = { Text(res.title) },
+                    supportingContent = { if (res.subtitle.isNotBlank()) Text(res.subtitle, fontSize = 12.sp) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    trailingContent = {
+                        TextButton(onClick = { onResultChosen(res) }) { Text("Use") }
+                    }
+                )
+                Divider()
+            }
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }

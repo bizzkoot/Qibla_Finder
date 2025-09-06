@@ -102,6 +102,7 @@ private fun calculateZoomAdaptiveThreshold(digitalZoomFactor: Double, config: Di
 @Composable
 fun OpenStreetMapView(
     currentLocation: MapLocation,
+    recenterTo: MapLocation? = null,
     onLocationSelected: (MapLocation) -> Unit,
     onAccuracyChanged: (Int) -> Unit,
     onTileInfoChanged: (Int, Double) -> Unit = { _, _ -> },
@@ -111,6 +112,7 @@ fun OpenStreetMapView(
     onPanStop: (() -> Unit)? = null,
     panelHeight: Int = 0,
     isMapTypeChanging: Boolean = false,
+    onRecenterConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -124,11 +126,12 @@ fun OpenStreetMapView(
     var digitalZoom by remember { mutableStateOf(1.0) }
     var isTileLoadingPaused by remember { mutableStateOf(false) }
     var digitalZoomIndicator by remember { mutableStateOf(false) }
+    // Viewport-only burst loading when out-of-bounds at high digital zoom
+    // Digital zoom policy: always load visible tiles; no buffer
     
     // --- Out-of-bounds and refresh state ---
     var outOfBoundsState by remember { mutableStateOf(OutOfBoundsState()) }
-    var showDigitalZoomAlert by remember { mutableStateOf(false) }
-    var alertDismissJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    
 
     // --- Tile Cache & Loading State ---
     var tileStateCache by remember(mapType) { mutableStateOf<Map<String, TileLoadState>>(emptyMap()) }
@@ -185,24 +188,26 @@ fun OpenStreetMapView(
         tileY = initialY
     }
 
+    // One-shot recenter request independent of currentLocation equality
+    LaunchedEffect(recenterTo?.latitude, recenterTo?.longitude) {
+        val target = recenterTo
+        if (target != null) {
+            val (x, y) = PrecisionCoordinateTransformer.latLngToHighPrecisionTile(
+                target.latitude, target.longitude, zoom
+            )
+            tileX = x
+            tileY = y
+            onLocationSelected(target)
+            onRecenterConsumed()
+            Timber.d("📍 Recenter applied to: ${String.format("%.6f", target.latitude)}, ${String.format("%.6f", target.longitude)}")
+        }
+    }
+
     // --- Digital Zoom Optimization ---
     LaunchedEffect(digitalZoom) {
         val wasInDigitalZoom = isTileLoadingPaused
         isTileLoadingPaused = digitalZoom > 1.0
-        
-        // Show alert when entering digital zoom mode
-        if (!wasInDigitalZoom && isTileLoadingPaused) {
-            showDigitalZoomAlert = true
-            alertDismissJob?.cancel()
-            alertDismissJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-                kotlinx.coroutines.delay(4000) // Auto dismiss after 4 seconds
-                showDigitalZoomAlert = false
-            }
-        } else if (wasInDigitalZoom && !isTileLoadingPaused) {
-            // Hide alert when exiting digital zoom
-            showDigitalZoomAlert = false
-            alertDismissJob?.cancel()
-        }
+        // No alert; downloads for visible tiles continue in digital zoom
     }
 
     // --- Performance Monitoring ---
@@ -264,7 +269,8 @@ fun OpenStreetMapView(
         // Skip tile loading if paused (during digital zoom) or during interactions
         // Exception: Allow tile loading during map type changes even if normally paused
         // Exception: Allow tile loading when force reload is triggered
-        if ((isTileLoadingPaused && !isMapTypeChanging && !forceTileReload) || isDragging) {
+        // Skip only during drag to keep interactions smooth; allow loading even in digital zoom
+        if (isDragging) {
             return@LaunchedEffect
         }
         
@@ -290,9 +296,9 @@ fun OpenStreetMapView(
         isLoading = true
         error = null
 
-        val bufferSize = tileManager.getBufferSizeBasedOnConnection()
+        val bufferSize = if (digitalZoom > 1.0) 0.0 else tileManager.getBufferSizeBasedOnConnection()
         val (visibleTiles, bufferTiles) = tileManager.getTilesForViewWithPriority(tileX, tileY, zoom, 800, 800, mapType, bufferSize)
-        val allTiles = visibleTiles + bufferTiles
+        val allTiles = if (digitalZoom > 1.0) visibleTiles else (visibleTiles + bufferTiles)
         
         // Store last known good position when we have tiles and are not in digital zoom
         if (digitalZoom <= 1.0) {
@@ -313,12 +319,10 @@ fun OpenStreetMapView(
             }
         }
         isLoading = false
+
+        // No special burst lifecycle; visible tiles always load in digital zoom
         
-        // Reset force tile reload flag after successful loading
-        if (forceTileReload) {
-            forceTileReload = false
-            Timber.d("📍 Force tile reload completed, flag reset")
-        }
+        // Do not reset forceTileReload here to avoid cancelling progressive tile streams
     }
 
     // --- Out-of-bounds Detection (runs independently of tile loading) ---
@@ -385,10 +389,14 @@ fun OpenStreetMapView(
                 isOutOfBounds = isCurrentlyOutOfBounds,
                 showRefreshButton = shouldShowRefreshButton
             )
-            
+
             Timber.i("📍 Out-of-bounds state updated: outOfBounds=$isCurrentlyOutOfBounds, showRefreshButton=$shouldShowRefreshButton")
         }
+
+        // If tiles became available again, out-of-bounds UI will hide naturally
     }
+
+    // Remove auto-burst. Loading in digital zoom is always allowed for visible viewport.
 
     // Update tile info when cache changes
     LaunchedEffect(tileStateCache) {
@@ -610,10 +618,11 @@ fun OpenStreetMapView(
 
         // --- Digital Zoom Indicator ---
         if (digitalZoomIndicator) {
+            val overlayTopPadding = with(LocalDensity.current) { panelHeight.toDp() + 16.dp }
             Card(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(16.dp),
+                    .padding(top = overlayTopPadding, start = 16.dp, end = 16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
                 )
@@ -629,8 +638,17 @@ fun OpenStreetMapView(
         
         // --- Map Refresh Button (when out of bounds in digital zoom) ---
         if (outOfBoundsState.showRefreshButton) {
-            FloatingActionButton(
-                onClick = {
+            // Only show Return to Map as a fallback action
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = (-50).dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Return to Map button (existing behavior)
+                FloatingActionButton(
+                    onClick = {
                     Timber.i("📍 Refresh button clicked - returning to last good position")
                     
                     // Gracefully return to normal zoom and last good position
@@ -665,67 +683,30 @@ fun OpenStreetMapView(
                             showRefreshButton = false
                         )
                     }
-                },
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(y = (-50).dp),
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
                 ) {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Default.Refresh,
-                        contentDescription = "Refresh Map",
-                        tint = Color.White
-                    )
-                    Text(
-                        text = "Return to Map",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.Refresh,
+                            contentDescription = "Refresh Map",
+                            tint = Color.White
+                        )
+                        Text(
+                            text = "Return to Map",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
         }
         
-        // --- Transparent Auto-Dismissing Alert for Digital Zoom ---
-        if (showDigitalZoomAlert) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures {
-                            showDigitalZoomAlert = false
-                            alertDismissJob?.cancel()
-                        }
-                    },
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Default.Info,
-                        contentDescription = "Info",
-                        tint = MaterialTheme.colorScheme.inverseOnSurface,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Digital zoom active - tile downloads paused",
-                        color = MaterialTheme.colorScheme.inverseOnSurface,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
+        // Alert removed intentionally (we now auto-load visible tiles in digital zoom)
         
         // --- UI Elements (Zoom, Info) ---
         val density = LocalDensity.current

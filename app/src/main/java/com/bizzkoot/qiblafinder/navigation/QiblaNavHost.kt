@@ -173,7 +173,13 @@ fun QiblaNavHost(
             Timber.d("🎯 QiblaNavHost - Manual Location composable called")
             
             // Create ManualLocationViewModel directly with shared repository
-            val viewModel = remember { ManualLocationViewModel(sharedLocationRepository) }
+            val context = LocalContext.current
+            val viewModel = remember { 
+                ManualLocationViewModel(
+                    sharedLocationRepository,
+                    com.bizzkoot.qiblafinder.ui.location.AndroidGeocodingService(context.applicationContext)
+                )
+            }
             
             Timber.d("🎯 QiblaNavHost - ManualLocationViewModel created directly: $viewModel")
 

@@ -103,12 +103,12 @@ fun CompassScreen(
                         is OrientationState.Initializing -> 0f
                         is OrientationState.Available -> oState.trueHeading
                     }
-                    val difference = kotlin.math.abs(deviceRotation - qibla)
+                    val difference = angleDiff(deviceRotation, qibla)
                     val isPhoneFlat = when (val oState = orientationState) {
                         is OrientationState.Initializing -> false
                         is OrientationState.Available -> oState.isPhoneFlat
                     }
-                    (difference <= 5f || difference >= 355f) && !isPhoneFlat
+                    (difference <= 5f) && !isPhoneFlat
                 } ?: false
                 
                 CompassGraphic(
@@ -308,6 +308,11 @@ fun CompassScreen(
             onDismiss = { viewModel.stopCalibration() }
         )
     }
+}
+
+private fun angleDiff(a: Float, b: Float): Float {
+    val d = ((a - b + 540f) % 360f) - 180f
+    return kotlin.math.abs(d)
 }
 
 @Composable

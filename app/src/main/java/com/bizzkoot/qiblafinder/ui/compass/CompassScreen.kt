@@ -40,13 +40,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.bizzkoot.qiblafinder.model.CompassStatus
 import timber.log.Timber
 import com.bizzkoot.qiblafinder.model.LocationAccuracy
 import com.bizzkoot.qiblafinder.model.LocationState
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.ui.calibration.CalibrationOverlay
+import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 
 @Composable
 fun CompassScreen(
@@ -64,6 +64,7 @@ fun CompassScreen(
     val isSunCalibrated = uiState.isSunCalibrated
     val isManualLocation = uiState.isManualLocation
     val showCalibration by viewModel.showCalibration.collectAsState()
+    val typography = QiblaTypography.current
     
 
     
@@ -153,21 +154,21 @@ fun CompassScreen(
                                         Text(
                                             text = "⚠️ RED ALERT",
                                             color = Color.White,
-                                            fontSize = 20.sp,
+                                            style = typography.titleSecondary,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = "Please lay your phone FLAT to ensure accurate Qibla reading",
                                             color = Color.White,
-                                            fontSize = 16.sp,
+                                            style = typography.bodyPrimary,
                                             textAlign = TextAlign.Center
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = "Current tilt: ${oState.phoneTiltAngle.toInt()}°",
                                             color = Color.White.copy(alpha = 0.8f),
-                                            fontSize = 14.sp
+                                            style = typography.bodySecondary
                                         )
                                     }
                                 }
@@ -185,14 +186,14 @@ fun CompassScreen(
                         ) {
                             Text(
                                 text = "Heading: ${oState.trueHeading.toInt()}°",
-                                fontSize = 18.sp,
+                                style = typography.titleTertiary,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(16.dp)
                             )
                             if (isAligned) {
                                 Text(
                                     text = "✅ Qibla Found! Face this direction to pray",
-                                    fontSize = 16.sp,
+                                    style = typography.bodyPrimary,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.Green,
                                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -200,13 +201,13 @@ fun CompassScreen(
                             } else {
                                 Text(
                                     text = "Align blue arrow with red arrow",
-                                    fontSize = 14.sp,
+                                    style = typography.bodySecondary,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
                                 Text(
                                     text = "Then face 12 o'clock position",
-                                    fontSize = 14.sp,
+                                    style = typography.bodySecondary,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
@@ -216,7 +217,7 @@ fun CompassScreen(
                     else -> {
                         Text(
                             text = "Initializing compass...",
-                            fontSize = 16.sp,
+                            style = typography.bodyPrimary,
                             modifier = Modifier.padding(16.dp)
                         )
                     }
@@ -322,6 +323,7 @@ fun StatusBar(
     isSunCalibrated: Boolean = false,
     isManualLocation: Boolean = false
 ) {
+    val typography = QiblaTypography.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -346,7 +348,7 @@ fun StatusBar(
                 is LocationState.PermissionDenied -> "📍 Permission Denied"
             }
         }
-        Text(text = locationText, fontSize = 14.sp)
+        Text(text = locationText, style = typography.bodySecondary)
 
         // Compass status
         val compassText = when (orientationState) {
@@ -359,7 +361,7 @@ fun StatusBar(
                 }
             }
         }
-        Text(text = compassText, fontSize = 14.sp)
+        Text(text = compassText, style = typography.bodySecondary)
     }
 }
 
@@ -613,6 +615,7 @@ fun LocationInfo(
     locationState: LocationState,
     distanceToKaaba: String
 ) {
+    val typography = QiblaTypography.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -630,22 +633,22 @@ fun LocationInfo(
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Searching for GPS signal...", fontSize = 16.sp)
+                    Text("Searching for GPS signal...", style = typography.bodyPrimary)
                 }
             }
             is LocationState.Available -> {
                 Text(
                     text = "Your Location:",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
+                    style = typography.titleTertiary
                 )
                 Text(
                     text = "Lat: ${"%.4f".format(locationState.location.latitude)}",
-                    fontSize = 16.sp
+                    style = typography.bodyPrimary
                 )
                 Text(
                     text = "Lng: ${"%.4f".format(locationState.location.longitude)}",
-                    fontSize = 16.sp
+                    style = typography.bodyPrimary
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -655,7 +658,7 @@ fun LocationInfo(
                     Text(
                         text = "GPS Accuracy:",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        style = typography.bodyPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     // Show green checkmark if accuracy is sufficient for prayer (≤10m)
@@ -675,7 +678,7 @@ fun LocationInfo(
                         LocationAccuracy.LOW_ACCURACY -> "Low (±${locationState.accuracy.toInt()}m) ❌ Move to open area"
                         LocationAccuracy.UNKNOWN -> "Unknown"
                     },
-                    fontSize = 14.sp,
+                    style = typography.bodySecondary,
                     color = when (locationState.accuracyLevel) {
                         LocationAccuracy.HIGH_ACCURACY -> Color.Green
                         LocationAccuracy.MEDIUM_ACCURACY -> Color(0xFFFF8C00) // Orange
@@ -687,11 +690,11 @@ fun LocationInfo(
                 Text(
                     text = "Distance to Kaaba:",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
+                    style = typography.titleTertiary
                 )
                 Text(
                     text = distanceToKaaba,
-                    fontSize = 16.sp
+                    style = typography.bodyPrimary
                 )
             }
             is LocationState.Error -> {

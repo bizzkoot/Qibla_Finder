@@ -31,13 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -70,6 +69,7 @@ fun ManualLocationScreen(
     timber.log.Timber.d("🎯 ManualLocationScreen - ENTERING ManualLocationScreen composable")
     timber.log.Timber.d("🎯 ManualLocationScreen - ViewModel: $viewModel")
     val uiState by viewModel.uiState.collectAsState()
+    val typography = QiblaTypography.current
 
     // Debug logging
     LaunchedEffect(Unit) {
@@ -86,7 +86,7 @@ fun ManualLocationScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
-                title = { Text("Manual Location Adjustment") },
+                title = { Text("Manual Location Adjustment", style = typography.titleTertiary) },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
                 navigationIcon = {
                     IconButton(onClick = onBackPressed) {
@@ -133,13 +133,13 @@ fun ManualLocationScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Loading map...",
-                            fontSize = 14.sp,
+                            style = typography.bodySecondary,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Getting your location",
-                            fontSize = 12.sp,
+                            style = typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -154,13 +154,13 @@ fun ManualLocationScreen(
                     ) {
                         Text(
                             text = "Error loading map",
-                            fontSize = 16.sp,
+                            style = typography.titleTertiary,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = uiState.error!!,
-                            fontSize = 14.sp,
+                            style = typography.bodySecondary,
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(16.dp))
@@ -212,7 +212,11 @@ fun ManualLocationScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Adjust Your Location", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Adjust Your Location",
+                            style = typography.titleTertiary,
+                            fontWeight = FontWeight.Bold
+                        )
                         
                         // Qibla Direction Toggle Button
                         IconButton(
@@ -228,13 +232,16 @@ fun ManualLocationScreen(
                     }
                     
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Drag the pin to your exact location. The green line shows the direction to Kaaba.", fontSize = 14.sp)
+                    Text(
+                        "Drag the pin to your exact location. The green line shows the direction to Kaaba.",
+                        style = typography.bodySecondary
+                    )
                     
                     uiState.selectedLocation?.let {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "Selected: ${String.format("%.4f", it.latitude)}, ${String.format("%.4f", it.longitude)}",
-                            fontSize = 12.sp,
+                            style = typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -265,7 +272,7 @@ fun ManualLocationScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = uiState.error!!,
-                                    fontSize = 11.sp,
+                                    style = typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -282,7 +289,7 @@ fun ManualLocationScreen(
                         ) {
                             Text(
                                 "Qibla: ${String.format("%.1f", uiState.qiblaBearing)}°",
-                                fontSize = 12.sp,
+                                style = typography.labelSmall,
                                 color = if (uiState.error != null) 
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 else 
@@ -291,7 +298,7 @@ fun ManualLocationScreen(
                             )
                             Text(
                                 "Distance: ${String.format("%.0f", uiState.distanceToKaaba)} km",
-                                fontSize = 12.sp,
+                                style = typography.labelSmall,
                                 color = if (uiState.error != null) 
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 else 
@@ -313,7 +320,7 @@ fun ManualLocationScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 "Calculating Qibla direction...",
-                                fontSize = 11.sp,
+                                style = typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -324,8 +331,16 @@ fun ManualLocationScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Tiles: ${uiState.tileCount}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "Tiles: ${uiState.tileCount}",
+                            style = typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB",
+                            style = typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -349,7 +364,10 @@ fun ManualLocationScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Accuracy: ±${uiState.accuracyInMeters}m", fontSize = 14.sp)
+                    Text(
+                        "Accuracy: ±${uiState.accuracyInMeters}m",
+                        style = typography.bodySecondary
+                    )
                     Button(
                         onClick = {
                             viewModel.confirmLocation()?.let { onLocationConfirmed(it) }
@@ -384,7 +402,7 @@ fun ManualLocationScreen(
                         )
                         Text(
                             text = "Qibla",
-                            fontSize = 10.sp,
+                            style = typography.labelSmall,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -470,6 +488,7 @@ private fun SearchBottomSheet(
     onSearch: () -> Unit,
     onResultChosen: (GeocodingResult) -> Unit
 ) {
+    val typography = QiblaTypography.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(text = "Search Location", style = MaterialTheme.typography.titleMedium)
@@ -493,7 +512,7 @@ private fun SearchBottomSheet(
                     Text(
                         text = uiState.searchError,
                         color = MaterialTheme.colorScheme.error,
-                        fontSize = 12.sp
+                        style = typography.labelSmall
                     )
                 } else {
                     Spacer(modifier = Modifier.height(0.dp))
@@ -514,13 +533,13 @@ private fun SearchBottomSheet(
 
             val results = uiState.searchResults
             if (!uiState.isSearching && results.isEmpty() && uiState.searchError == null && uiState.searchQuery.isNotBlank()) {
-                Text("No results", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text("No results", color = MaterialTheme.colorScheme.onSurfaceVariant, style = typography.labelSmall)
             }
 
             results.take(5).forEach { res ->
                 ListItem(
                     headlineContent = { Text(res.title) },
-                    supportingContent = { if (res.subtitle.isNotBlank()) Text(res.subtitle, fontSize = 12.sp) },
+                    supportingContent = { if (res.subtitle.isNotBlank()) Text(res.subtitle, style = typography.labelSmall) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),

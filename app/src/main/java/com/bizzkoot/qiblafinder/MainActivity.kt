@@ -8,9 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +26,7 @@ import com.bizzkoot.qiblafinder.update.ui.UpdateNotificationBanner
 import com.bizzkoot.qiblafinder.update.ui.EnhancedUpdateNotificationBanner
 import com.bizzkoot.qiblafinder.update.services.EnhancedDownloadManager
 import com.bizzkoot.qiblafinder.update.viewmodel.UpdateNotificationViewModel
+import com.bizzkoot.qiblafinder.ui.theme.QiblaFinderTheme
 import timber.log.Timber
 
 class MainActivity : ComponentActivity() {
@@ -57,10 +55,9 @@ class MainActivity : ComponentActivity() {
         Timber.d("🎯 MainActivity - onCreate() called with edge-to-edge")
         setContent {
             QiblaFinderTheme {
-                // Create a full-screen surface that handles insets properly
-                Surface(
+                androidx.compose.material3.Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background
                 ) {
                     val updateUiState by updateNotificationViewModel.uiState.collectAsState()
                     
@@ -138,22 +135,13 @@ fun QiblaApp(
         Timber.d("🎯 QiblaApp - Repositories created: Location=$sharedLocationRepository, Sensor=$sharedSensorRepository")
         
         val appState = rememberQiblaAppState()
-        
-                                QiblaNavHost(
-                            navController = appState.navController,
-                            sharedLocationRepository = sharedLocationRepository,
-                            sharedSensorRepository = sharedSensorRepository,
-                            updateNotificationViewModel = updateNotificationViewModel,
-                            enhancedDownloadManager = enhancedDownloadManager
-                        )
-    }
-}
 
-@Composable
-fun QiblaFinderTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = MaterialTheme.colorScheme,
-        typography = MaterialTheme.typography,
-        content = content
-    )
+        QiblaNavHost(
+            navController = appState.navController,
+            sharedLocationRepository = sharedLocationRepository,
+            sharedSensorRepository = sharedSensorRepository,
+            updateNotificationViewModel = updateNotificationViewModel,
+            enhancedDownloadManager = enhancedDownloadManager
+        )
+    }
 }

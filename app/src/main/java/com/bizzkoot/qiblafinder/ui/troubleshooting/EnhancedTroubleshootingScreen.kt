@@ -18,8 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.bizzkoot.qiblafinder.ui.icons.GitHub
+import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 import com.bizzkoot.qiblafinder.utils.GitHubUtils
 import com.bizzkoot.qiblafinder.update.services.DownloadState
 
@@ -39,6 +39,7 @@ fun EnhancedTroubleshootingScreen(
     val context = LocalContext.current
     val updateCheckState by viewModel.updateCheckState.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
+    val typography = QiblaTypography.current
     
     val troubleshootingItems = listOf(
         TroubleshootingItem(
@@ -125,7 +126,7 @@ fun EnhancedTroubleshootingScreen(
     ) {
         // Top App Bar
         TopAppBar(
-            title = { Text("Help & Support") },
+            title = { Text("Help & Support", style = typography.titleTertiary) },
             windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
             navigationIcon = {
                 IconButton(onClick = onBackPressed) {
@@ -167,14 +168,14 @@ fun EnhancedTroubleshootingScreen(
                     ) {
                         Text(
                             text = "❓ Need Help?",
-                            fontSize = 20.sp,
+                            style = typography.titleSecondary,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Find solutions to common issues below. Tap on any section to expand it.",
-                            fontSize = 14.sp,
+                            style = typography.bodySecondary,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
@@ -198,6 +199,7 @@ fun AppInformationCard(
     onCancel: () -> Unit,
     onInstall: () -> Unit
 ) {
+    val typography = QiblaTypography.current
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
@@ -216,7 +218,7 @@ fun AppInformationCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "📱 App Information",
-                    fontSize = 18.sp,
+                    style = typography.titleTertiary,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -233,12 +235,12 @@ fun AppInformationCard(
                 Column {
                     Text(
                         text = "Current Version",
-                        fontSize = 14.sp,
+                        style = typography.bodySecondary,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                     Text(
                         text = "v${updateCheckState.currentVersion}",
-                        fontSize = 16.sp,
+                        style = typography.bodyEmphasis,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -252,7 +254,7 @@ fun AppInformationCard(
                         ) {
                             Text(
                                 text = "Update Available",
-                                fontSize = 12.sp,
+                                style = typography.badge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -265,7 +267,7 @@ fun AppInformationCard(
                         ) {
                             Text(
                                 text = "Up to Date",
-                                fontSize = 12.sp,
+                                style = typography.badge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -279,7 +281,7 @@ fun AppInformationCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "New version v${updateCheckState.newVersion} is available!",
-                    fontSize = 14.sp,
+                    style = typography.bodySecondary,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
                 )
@@ -289,7 +291,7 @@ fun AppInformationCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = updateCheckState.error,
-                    fontSize = 12.sp,
+                    style = typography.labelSmall,
                     color = MaterialTheme.colorScheme.error
                 )
             }
@@ -305,7 +307,7 @@ fun AppInformationCard(
                 updateCheckState.lastChecked?.let { lastChecked ->
                     Text(
                         text = "Last checked: $lastChecked",
-                        fontSize = 12.sp,
+                        style = typography.caption,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
@@ -360,6 +362,7 @@ fun UpdateDownloadSection(
     onCancel: () -> Unit,
     onInstall: () -> Unit
 ) {
+    val typography = QiblaTypography.current
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
         modifier = Modifier.fillMaxWidth()
@@ -390,7 +393,7 @@ fun UpdateDownloadSection(
                         is DownloadState.Error -> "Download Failed"
                         else -> "🎉 Ready to Update!"
                     },
-                    fontSize = 16.sp,
+                    style = typography.bodyEmphasis,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
@@ -400,7 +403,7 @@ fun UpdateDownloadSection(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Version $version is available",
-                    fontSize = 14.sp,
+                    style = typography.bodySecondary,
                     color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
                 )
             }
@@ -427,13 +430,13 @@ fun UpdateDownloadSection(
                 ) {
                     Text(
                         text = "${(progress * 100).toInt()}%",
-                        fontSize = 12.sp,
+                        style = typography.labelSmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                     )
                     
                     Text(
                         text = "${formatBytes(downloadState.bytesDownloaded)} / ${formatBytes(downloadState.totalBytes)}",
-                        fontSize = 12.sp,
+                        style = typography.labelSmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                     )
                 }
@@ -444,7 +447,7 @@ fun UpdateDownloadSection(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = downloadState.message,
-                    fontSize = 12.sp,
+                    style = typography.labelSmall,
                     color = MaterialTheme.colorScheme.error
                 )
             }
@@ -545,6 +548,7 @@ private fun formatBytes(bytes: Long): String {
 @Composable
 fun GitHubRepositoryCard() {
     val context = LocalContext.current
+    val typography = QiblaTypography.current
     
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -564,7 +568,7 @@ fun GitHubRepositoryCard() {
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "🔗 GitHub Repository",
-                    fontSize = 18.sp,
+                    style = typography.titleTertiary,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -608,6 +612,7 @@ fun GitHubLinkButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
 ) {
+    val typography = QiblaTypography.current
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -631,12 +636,12 @@ fun GitHubLinkButton(
             ) {
                 Text(
                     text = title,
-                    fontSize = 14.sp,
+                    style = typography.bodySecondary,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
                     text = description,
-                    fontSize = 12.sp,
+                    style = typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
@@ -654,6 +659,7 @@ fun GitHubLinkButton(
 @Composable
 fun TroubleshootingItemCard(item: TroubleshootingItem) {
     var expanded by remember { mutableStateOf(false) }
+    val typography = QiblaTypography.current
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -669,12 +675,12 @@ fun TroubleshootingItemCard(item: TroubleshootingItem) {
             ) {
                 Text(
                     text = item.icon,
-                    fontSize = 24.sp,
+                    style = typography.titlePrimary,
                     modifier = Modifier.padding(end = 12.dp)
                 )
                 Text(
                     text = item.title,
-                    fontSize = 16.sp,
+                    style = typography.titleTertiary,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
@@ -695,7 +701,7 @@ fun TroubleshootingItemCard(item: TroubleshootingItem) {
                 // Symptoms
                 Text(
                     text = "Symptoms:",
-                    fontSize = 14.sp,
+                    style = typography.bodyEmphasis,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -703,7 +709,7 @@ fun TroubleshootingItemCard(item: TroubleshootingItem) {
                 item.symptoms.forEach { symptom ->
                     Text(
                         text = "• $symptom",
-                        fontSize = 12.sp,
+                        style = typography.labelSmall,
                         modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
                     )
                 }
@@ -713,7 +719,7 @@ fun TroubleshootingItemCard(item: TroubleshootingItem) {
                 // Solutions
                 Text(
                     text = "Solutions:",
-                    fontSize = 14.sp,
+                    style = typography.bodyEmphasis,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -721,7 +727,7 @@ fun TroubleshootingItemCard(item: TroubleshootingItem) {
                 item.solutions.forEachIndexed { index, solution ->
                     Text(
                         text = "${index + 1}. $solution",
-                        fontSize = 12.sp,
+                        style = typography.labelSmall,
                         modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
                     )
                 }

@@ -187,6 +187,7 @@ fun ManualLocationScreen(
                         viewModel.updateTileInfo(tileCount, cacheSizeMB)
                     },
                     mapType = uiState.selectedMapType,
+                    cacheLimitMb = uiState.cacheLimitMb,
                     showQiblaDirection = uiState.showQiblaDirection,
                     onQiblaLineNeedsRedraw = { viewModel.markQiblaLineNeedsRedraw() },
                     onPanStop = { viewModel.onPanStop() },
@@ -337,7 +338,7 @@ fun ManualLocationScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB",
+                            "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB / ${uiState.cacheLimitMb}MB",
                             style = typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

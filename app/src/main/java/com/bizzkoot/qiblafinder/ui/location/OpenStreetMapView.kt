@@ -107,6 +107,7 @@ fun OpenStreetMapView(
     onAccuracyChanged: (Int) -> Unit,
     onTileInfoChanged: (Int, Double) -> Unit = { _, _ -> },
     mapType: MapType = MapType.STREET,
+    cacheLimitMb: Int,
     showQiblaDirection: Boolean = true,
     onQiblaLineNeedsRedraw: () -> Unit = {},
     onPanStop: (() -> Unit)? = null,
@@ -116,7 +117,9 @@ fun OpenStreetMapView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val tileManager = remember { OpenStreetMapTileManager(context) }
+    val tileManager = remember(cacheLimitMb) {
+        OpenStreetMapTileManager(context, cacheLimitMb)
+    }
     val qiblaOverlay = remember { QiblaDirectionOverlay() }
 
     // --- Enhanced State Management ---

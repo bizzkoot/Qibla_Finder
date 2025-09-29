@@ -37,6 +37,7 @@ data class ManualLocationUiState(
     val panelHeight: Int = 0, // New field for dynamic positioning
     val lastMapType: MapType? = null,
     val isMapTypeChanging: Boolean = false,
+    val cacheLimitMb: Int = 60,
     // Search state
     val searchAvailable: Boolean = true,
     val searchQuery: String = "",
@@ -47,7 +48,8 @@ data class ManualLocationUiState(
 
 class ManualLocationViewModel(
     private val locationRepository: LocationRepository,
-    private val geocodingService: GeocodingService? = null
+    private val geocodingService: GeocodingService? = null,
+    private val preferences: ManualLocationPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ManualLocationUiState())
@@ -84,6 +86,12 @@ class ManualLocationViewModel(
 
     init {
         Timber.d("📍 ManualLocationViewModel - Initializing ViewModel")
+        val preferredMapType = preferences.getLastMapType()
+        val cacheConfig = preferences.getCacheConfig()
+        _uiState.value = _uiState.value.copy(
+            selectedMapType = preferredMapType,
+            cacheLimitMb = cacheConfig.limitMb
+        )
         loadInitialLocation()
         // Initialize search availability
         val available = try {
@@ -265,6 +273,7 @@ class ManualLocationViewModel(
         // The view will react to the state change and reload the tiles.
         // Increased delay for better state coordination during map type transitions.
         viewModelScope.launch {
+            preferences.setLastMapType(mapType)
             kotlinx.coroutines.delay(400) // Allow cache reset and tile loading
             _uiState.value = _uiState.value.copy(
                 isLoading = false,

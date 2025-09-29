@@ -34,10 +34,13 @@ sealed class TileLoadState {
     data class Failed(val error: String) : TileLoadState()
 }
 
-class OpenStreetMapTileManager(private val context: Context) {
+class OpenStreetMapTileManager(
+    private val context: Context,
+    maxCacheSizeMb: Int = 100
+) {
 
     private val cacheDir = File(context.cacheDir, "map_tiles")
-    private val maxCacheSize = 100 * 1024 * 1024 // 100MB max cache
+    private val maxCacheSize = maxCacheSizeMb.coerceIn(30, 150) * 1024 * 1024 // Clamp to reasonable bounds
 
     // Map type specific cache directories
     private val streetCacheDir = File(cacheDir, "street")

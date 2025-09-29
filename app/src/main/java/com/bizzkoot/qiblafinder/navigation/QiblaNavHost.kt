@@ -174,10 +174,11 @@ fun QiblaNavHost(
             
             // Create ManualLocationViewModel directly with shared repository
             val context = LocalContext.current
-            val viewModel = remember { 
+            val viewModel = remember {
                 ManualLocationViewModel(
                     sharedLocationRepository,
-                    com.bizzkoot.qiblafinder.ui.location.AndroidGeocodingService(context.applicationContext)
+                    com.bizzkoot.qiblafinder.ui.location.AndroidGeocodingService(context.applicationContext),
+                    com.bizzkoot.qiblafinder.ui.location.ManualLocationPreferences(context.applicationContext)
                 )
             }
             

@@ -5,6 +5,9 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.view.Surface
 import android.view.WindowManager
 import kotlinx.coroutines.launch
@@ -18,6 +21,58 @@ import javax.inject.Inject
 import kotlin.math.pow
 import kotlin.math.sqrt
 import timber.log.Timber
+import kotlin.math.abs
+
+internal class AdaptiveCompassFilter {
+    private var lastTimestampNs: Long = 0L
+    private var motionEstimate: Float = 0f
+    private var lastRawHeading: Float? = null
+
+    fun reset() {
+        lastTimestampNs = 0L
+        motionEstimate = 0f
+        lastRawHeading = null
+    }
+
+    fun computeAlpha(eventTimestampNs: Long, rawHeading: Float): Float {
+        val previousTimestampNs = lastTimestampNs
+        lastTimestampNs = eventTimestampNs
+
+        val deltaSeconds = if (previousTimestampNs == 0L) {
+            0.02f // Assume ~50 Hz on first sample.
+        } else {
+            ((eventTimestampNs - previousTimestampNs) / 1_000_000_000f).coerceAtLeast(0.001f)
+        }
+
+        val previousHeading = lastRawHeading
+        lastRawHeading = rawHeading
+
+        val headingDelta = if (previousHeading == null) {
+            0f
+        } else {
+            angularDistanceDegrees(previousHeading, rawHeading)
+        }
+
+        // Update exponential moving average of motion magnitude.
+        motionEstimate = (motionEstimate * 0.9f) + (headingDelta * 0.1f)
+
+        val timeConstant = when {
+            motionEstimate > 15f -> 0.08f
+            motionEstimate > 7f -> 0.12f
+            else -> 0.20f
+        }
+
+        val alpha = deltaSeconds / (timeConstant + deltaSeconds)
+        return alpha.coerceIn(0.05f, 0.6f)
+    }
+
+    companion object {
+        private fun angularDistanceDegrees(from: Float, to: Float): Float {
+            val diff = ((to - from + 540f) % 360f) - 180f
+            return abs(diff)
+        }
+    }
+}
 
 sealed interface OrientationState {
     object Initializing : OrientationState
@@ -55,12 +110,15 @@ class SensorRepository @Inject constructor(
     private val magnetometerReading = FloatArray(3)
     private var outOfBandCount = 0
     private var inBandCount = 0
+    private val adaptiveFilter = AdaptiveCompassFilter()
 
     private val _orientationState = MutableStateFlow<OrientationState>(OrientationState.Initializing)
     val orientationState: Flow<OrientationState> = _orientationState.asStateFlow()
 
     fun getOrientationFlow(): Flow<OrientationState> = callbackFlow {
         Timber.d("🔧 Starting compass sensor initialization...")
+
+        adaptiveFilter.reset()
 
         // Keep declination updated from location repository while this flow is active
         val locationJob = launch {
@@ -91,8 +149,7 @@ class SensorRepository @Inject constructor(
                         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
 
                         // Remap matrix based on display rotation for consistent azimuth
-                        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                        val rotation = windowManager.defaultDisplay.rotation
+                        val rotation = getDisplayRotation()
                         val (axisX, axisY) = when (rotation) {
                             Surface.ROTATION_0 -> SensorManager.AXIS_X to SensorManager.AXIS_Y
                             Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
@@ -109,7 +166,7 @@ class SensorRepository @Inject constructor(
                         val declination = getMagneticDeclination()
                         val trueHeading = (magneticHeading + declination + 360) % 360
 
-                        val alpha = 0.15f
+                        val alpha = adaptiveFilter.computeAlpha(event.timestamp, trueHeading)
                         val smoothedHeading = smoothAngle(lastHeading, trueHeading, alpha)
                         lastHeading = smoothedHeading
 
@@ -127,9 +184,7 @@ class SensorRepository @Inject constructor(
                         _orientationState.value = newState
                         trySend(newState) // <-- THE FIX
                     }
-                    Sensor.TYPE_MAGNETIC_FIELD -> {
-                        checkInterference(event.values)
-                    }
+                    Sensor.TYPE_MAGNETIC_FIELD -> checkInterference(event.values)
                     Sensor.TYPE_ACCELEROMETER -> {
                         System.arraycopy(event.values, 0, accelerometerReading, 0, 3)
                         checkPhoneOrientation()
@@ -162,14 +217,48 @@ class SensorRepository @Inject constructor(
             awaitClose()
             return@callbackFlow
         }
-        
-        sensorManager.registerListener(sensorEventListener, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI)
-        sensorManager.registerListener(sensorEventListener, magneticFieldSensor, SensorManager.SENSOR_DELAY_UI)
-        sensorManager.registerListener(sensorEventListener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        val sensorThread = HandlerThread("CompassSensors").also { it.start() }
+        val sensorHandler = Handler(sensorThread.looper)
+
+        val requestedDelay = SensorManager.SENSOR_DELAY_GAME
+        var samplingDelay = requestedDelay
+        val rotationRegistered = sensorManager.registerListener(
+            sensorEventListener,
+            rotationVectorSensor,
+            requestedDelay,
+            sensorHandler
+        )
+
+        if (!rotationRegistered) {
+            samplingDelay = SensorManager.SENSOR_DELAY_UI
+            val fallbackRegistered = sensorManager.registerListener(
+                sensorEventListener,
+                rotationVectorSensor,
+                samplingDelay,
+                sensorHandler
+            )
+
+            if (!fallbackRegistered) {
+                Timber.e("❌ Failed to register rotation vector sensor at fallback rate")
+                sensorThread.quitSafely()
+                locationJob.cancel()
+                close(IllegalStateException("Rotation vector sensor registration failed"))
+                return@callbackFlow
+            }
+        }
+
+        // Register with whichever samplingDelay succeeded for rotation vector.
+        magneticFieldSensor?.let {
+            sensorManager.registerListener(sensorEventListener, it, samplingDelay, sensorHandler)
+        }
+        accelerometer?.let {
+            sensorManager.registerListener(sensorEventListener, it, samplingDelay, sensorHandler)
+        }
 
         awaitClose {
             sensorManager.unregisterListener(sensorEventListener)
             locationJob.cancel()
+            sensorThread.quitSafely()
         }
     }
 
@@ -184,7 +273,7 @@ class SensorRepository @Inject constructor(
             val declination = getMagneticDeclination()
             val trueHeading = (magneticHeading + declination + 360) % 360
 
-            val alpha = 0.15f
+            val alpha = adaptiveFilter.computeAlpha(System.nanoTime(), trueHeading)
             val smoothedHeading = lastHeading + alpha * (trueHeading - lastHeading)
             lastHeading = smoothedHeading
 
@@ -290,5 +379,14 @@ class SensorRepository @Inject constructor(
      * Gets current phone tilt angle
      */
     fun getPhoneTiltAngle(): Float = phoneTiltAngle
-    
+
+    private fun getDisplayRotation(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            context.display?.rotation ?: Surface.ROTATION_0
+        } else {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+    }
 }

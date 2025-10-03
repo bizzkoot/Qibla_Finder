@@ -1,9 +1,11 @@
 package com.bizzkoot.qiblafinder.ui.compass
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,13 +32,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.*
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,8 @@ import com.bizzkoot.qiblafinder.model.LocationState
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.ui.calibration.CalibrationOverlay
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
+import android.os.SystemClock
+import kotlin.math.abs
 
 @Composable
 fun CompassScreen(
@@ -371,36 +374,40 @@ fun CompassGraphic(
     qiblaBearing: Float?,
     isAligned: Boolean
 ) {
-    val animatableRotation = remember { Animatable(0f) }
-
-    val previousAngle = remember { mutableStateOf(0f) }
+    var targetRotation by remember { mutableStateOf(0f) }
+    var lastDelta by remember { mutableStateOf(0f) }
+    val lastLogElapsed = remember { mutableStateOf(0L) }
 
     LaunchedEffect(orientationState) {
         if (orientationState is OrientationState.Available) {
             val currentAngle = orientationState.trueHeading
-            val previous = previousAngle.value
-            
-            // Determine the number of full rotations (laps)
-            val laps = (previous / 360).toInt()
-            var targetRotation = laps * 360 + currentAngle
+            val previous = targetRotation
 
-            // Find the shortest path by checking the adjacent laps
-            val diff = targetRotation - previous
-            if (diff > 180) {
-                targetRotation -= 360
-            } else if (diff < -180) {
-                targetRotation += 360
+            val laps = (previous / 360f).toInt()
+            var candidate = laps * 360f + currentAngle
+            val diff = candidate - previous
+            if (diff > 180f) {
+                candidate -= 360f
+            } else if (diff < -180f) {
+                candidate += 360f
             }
 
-            previousAngle.value = targetRotation
-            animatableRotation.animateTo(
-                targetValue = targetRotation,
-                animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.LinearEasing)
-            )
+            lastDelta = abs(candidate - previous)
+            targetRotation = candidate
         }
     }
-    
-    // Additional debug logging for orientation state
+
+    val animationSpec: AnimationSpec<Float> = when {
+        lastDelta < 1f -> snap()
+        lastDelta >= 90f -> snap()
+        else -> spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioNoBouncy)
+    }
+
+    val animatedRotation by animateFloatAsState(
+        targetValue = targetRotation,
+        animationSpec = animationSpec,
+        label = "CompassRotation"
+    )
 
     Box(
         modifier = Modifier.size(300.dp),
@@ -409,7 +416,11 @@ fun CompassGraphic(
         Canvas(
             modifier = Modifier.size(300.dp)
         ) {
-            Timber.d("🎨 Canvas drawing - Device rotation: ${animatableRotation.value}°")
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastLogElapsed.value >= 1000L) {
+                Timber.d("🎨 Canvas drawing - Device rotation: %.1f°", animatedRotation)
+                lastLogElapsed.value = now
+            }
             val centerX = size.width / 2
             val centerY = size.height / 2
             val radius = size.minDimension / 2 * 0.8f
@@ -431,7 +442,7 @@ fun CompassGraphic(
             directions.forEachIndexed { index, direction ->
                 // Convert compass coordinates (0° = North) to screen coordinates (0° = right, 90° = down)
                 // We need to subtract 90° to align North with the top of the screen
-                val screenAngle = directionAngles[index] - animatableRotation.value - 90f
+                val screenAngle = directionAngles[index] - animatedRotation - 90f
                 val angleRad = Math.toRadians(screenAngle.toDouble())
                 val textX = centerX + (radius * 0.7f * Math.cos(angleRad)).toFloat()
                 val textY = centerY + (radius * 0.7f * Math.sin(angleRad)).toFloat()
@@ -491,7 +502,7 @@ fun CompassGraphic(
             // The needle should point to the direction the device is facing
             val needleLength = radius * 0.9f
             // Convert compass coordinates to screen coordinates
-            val screenAngle = animatableRotation.value - 90f
+            val screenAngle = animatedRotation - 90f
             val needleAngleRad = Math.toRadians(screenAngle.toDouble())
             
             // Draw main needle line

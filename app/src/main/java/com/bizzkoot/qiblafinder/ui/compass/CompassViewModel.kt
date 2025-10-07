@@ -39,6 +39,10 @@ class CompassViewModel(
 
     private val isManualCalibrationInProgress = MutableStateFlow(false)
 
+    // Must be initialized before 'init' block uses it
+    private val _showCalibration = MutableStateFlow(false)
+    val showCalibration: StateFlow<Boolean> = _showCalibration
+
     init {
         // Apply any existing calibration offset
         sunCalibrationViewModel?.let { vm ->
@@ -96,15 +100,14 @@ class CompassViewModel(
 
         // Observe orientation state for automatic calibration
         viewModelScope.launch {
-            sensorRepository.orientationState.collect { state ->
-                if (state is OrientationState.Available) {
-                    if (state.compassStatus == CompassStatus.NEEDS_CALIBRATION) {
-                        _showCalibration.value = true
-                    } else if (state.compassStatus == CompassStatus.OK && !isManualCalibrationInProgress.value) {
-                        // Only hide automatically if not in a manual session
-                        _showCalibration.value = false
-                    }
-                }
+            combine(
+                sensorRepository.orientationState,
+                isManualCalibrationInProgress
+            ) { orientation, manual ->
+                val auto = (orientation as? OrientationState.Available)?.shouldShowCalibration ?: false
+                auto || manual
+            }.collect { shouldShow ->
+                _showCalibration.value = shouldShow
             }
         }
     }
@@ -156,17 +159,11 @@ class CompassViewModel(
     
     fun startCalibration() {
         isManualCalibrationInProgress.value = true
-        _showCalibration.value = true
+        sensorRepository.onManualCalibrationRequested()
     }
     
     fun stopCalibration() {
         isManualCalibrationInProgress.value = false
-        _showCalibration.value = false
+        sensorRepository.onCalibrationDismissed()
     }
-    
-
-    
-    private val _showCalibration = MutableStateFlow(false)
-    val showCalibration: StateFlow<Boolean> = _showCalibration
-    
 }

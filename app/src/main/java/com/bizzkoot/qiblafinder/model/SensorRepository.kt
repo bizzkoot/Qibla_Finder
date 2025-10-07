@@ -8,6 +8,7 @@ import android.hardware.SensorManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.view.Surface
 import android.view.WindowManager
 import kotlinx.coroutines.launch
@@ -18,20 +19,88 @@ import android.hardware.GeomagneticField
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
 import timber.log.Timber
-import kotlin.math.abs
 
-internal class AdaptiveCompassFilter {
+data class CompassFilterConfig(
+    val targetSamplingRateHz: Int = 50,
+    val minSamplingRateHz: Int = 20,
+    val accelLowPassAlpha: Float = 0.85f,
+    val motionNoiseFloor: Float = 0.015f,
+    val motionClamp: Float = 3f,
+    val motionDecay: Float = 0.6f,
+    val motionRecentWeight: Float = 0.4f,
+    val headingContribution: Float = 0.1f,
+    val highMotionThreshold: Float = 1.5f,
+    val mediumMotionThreshold: Float = 0.4f,
+    val minAlpha: Float = 0.05f,
+    val maxAlpha: Float = 0.6f,
+    val defaultDeltaSeconds: Float = 0.02f
+)
+
+data class CalibrationPromptConfig(
+    val accuracyDebounceMs: Long = 1_000L,
+    val triggerDurationMs: Long = 5_000L,
+    val cooldownMs: Long = 60_000L
+)
+
+interface CompassAnalytics {
+    fun onMagnetometerAccuracyChanged(accuracy: Int) {}
+    fun onCalibrationPromptShown(source: CalibrationPromptSource) {}
+    fun onCalibrationPromptDismissed(reason: CalibrationDismissReason) {}
+    fun onLinearAccelerationMeasured(magnitude: Float) {}
+
+    object NO_OP : CompassAnalytics
+}
+
+enum class CalibrationPromptSource { AUTOMATIC, MANUAL }
+
+enum class CalibrationDismissReason { USER_DISMISSED, ACCURACY_RECOVERED }
+
+internal class AdaptiveCompassFilter(
+    private val config: CompassFilterConfig,
+    private val analytics: CompassAnalytics
+) {
     private var lastTimestampNs: Long = 0L
     private var motionEstimate: Float = 0f
     private var lastRawHeading: Float? = null
+    private val gravity = FloatArray(3)
+    private val linearAcceleration = FloatArray(3)
+    private var hasGravitySample = false
 
     fun reset() {
         lastTimestampNs = 0L
         motionEstimate = 0f
         lastRawHeading = null
+        gravity.fill(0f)
+        linearAcceleration.fill(0f)
+        hasGravitySample = false
+    }
+
+    fun onAccelerometerEvent(event: SensorEvent) {
+        for (i in 0..2) {
+            val value = event.values[i]
+            val gravitySample = if (hasGravitySample) {
+                config.accelLowPassAlpha * gravity[i] + (1f - config.accelLowPassAlpha) * value
+            } else {
+                value
+            }
+            gravity[i] = gravitySample
+            linearAcceleration[i] = value - gravitySample
+        }
+        hasGravitySample = true
+
+        val magnitude = sqrt(
+            linearAcceleration[0] * linearAcceleration[0] +
+                linearAcceleration[1] * linearAcceleration[1] +
+                linearAcceleration[2] * linearAcceleration[2]
+        )
+        val adjustedMagnitude = (magnitude - config.motionNoiseFloor).coerceAtLeast(0f)
+        val clampedMagnitude = adjustedMagnitude.coerceAtMost(config.motionClamp)
+        motionEstimate = (motionEstimate * config.motionDecay) + (clampedMagnitude * config.motionRecentWeight)
+        analytics.onLinearAccelerationMeasured(clampedMagnitude)
     }
 
     fun computeAlpha(eventTimestampNs: Long, rawHeading: Float): Float {
@@ -39,7 +108,7 @@ internal class AdaptiveCompassFilter {
         lastTimestampNs = eventTimestampNs
 
         val deltaSeconds = if (previousTimestampNs == 0L) {
-            0.02f // Assume ~50 Hz on first sample.
+            config.defaultDeltaSeconds
         } else {
             ((eventTimestampNs - previousTimestampNs) / 1_000_000_000f).coerceAtLeast(0.001f)
         }
@@ -53,17 +122,16 @@ internal class AdaptiveCompassFilter {
             angularDistanceDegrees(previousHeading, rawHeading)
         }
 
-        // Update exponential moving average of motion magnitude.
-        motionEstimate = (motionEstimate * 0.9f) + (headingDelta * 0.1f)
+        val combinedMotion = motionEstimate + (headingDelta * config.headingContribution)
 
         val timeConstant = when {
-            motionEstimate > 15f -> 0.08f
-            motionEstimate > 7f -> 0.12f
+            combinedMotion > config.highMotionThreshold -> 0.08f
+            combinedMotion > config.mediumMotionThreshold -> 0.12f
             else -> 0.20f
         }
 
         val alpha = deltaSeconds / (timeConstant + deltaSeconds)
-        return alpha.coerceIn(0.05f, 0.6f)
+        return alpha.coerceIn(config.minAlpha, config.maxAlpha)
     }
 
     companion object {
@@ -81,7 +149,8 @@ sealed interface OrientationState {
         val compassStatus: CompassStatus,
         val isPhoneFlat: Boolean = true,
         val isPhoneVertical: Boolean = false,
-        val phoneTiltAngle: Float = 0f
+        val phoneTiltAngle: Float = 0f,
+        val shouldShowCalibration: Boolean = false
     ) : OrientationState
 }
 
@@ -91,14 +160,23 @@ enum class CompassStatus {
     INTERFERENCE
 }
 
+private enum class OrientationMode {
+    ROTATION_VECTOR,
+    KALMAN_FUSION
+}
+
 class SensorRepository @Inject constructor(
     private val context: Context,
-    private val locationRepository: LocationRepository
+    private val locationRepository: LocationRepository,
+    private val analytics: CompassAnalytics = CompassAnalytics.NO_OP,
+    private val filterConfig: CompassFilterConfig = CompassFilterConfig(),
+    private val calibrationConfig: CalibrationPromptConfig = CalibrationPromptConfig()
 ) {
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
     private val rotationMatrix = FloatArray(9)
     private val adjustedRotationMatrix = FloatArray(9)
+    private val inclinationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
     private var lastHeading: Float = 0f
     private var calibrationOffset: Double = 0.0
@@ -108,9 +186,20 @@ class SensorRepository @Inject constructor(
     private var phoneTiltAngle: Float = 0f
     private val accelerometerReading = FloatArray(3)
     private val magnetometerReading = FloatArray(3)
+    private var hasAccelerometerSample = false
+    private var hasMagnetometerSample = false
     private var outOfBandCount = 0
     private var inBandCount = 0
-    private val adaptiveFilter = AdaptiveCompassFilter()
+    private val adaptiveFilter = AdaptiveCompassFilter(filterConfig, analytics)
+    private val kalmanFusion = KalmanCompassFusion()
+    private var orientationMode: OrientationMode = OrientationMode.ROTATION_VECTOR
+    private var lastGyroTimestampNs: Long = 0L
+    private var magnetometerAccuracy: Int = SensorManager.SENSOR_STATUS_ACCURACY_HIGH
+    private var lastAccuracyChangeMs: Long = 0L
+    private var lowAccuracyStartMs: Long = 0L
+    private var interferenceStartMs: Long = 0L
+    private var calibrationCooldownUntilMs: Long = 0L
+    private var calibrationVisible = false
 
     private val _orientationState = MutableStateFlow<OrientationState>(OrientationState.Initializing)
     val orientationState: Flow<OrientationState> = _orientationState.asStateFlow()
@@ -119,6 +208,21 @@ class SensorRepository @Inject constructor(
         Timber.d("🔧 Starting compass sensor initialization...")
 
         adaptiveFilter.reset()
+        kalmanFusion.reset()
+        hasAccelerometerSample = false
+        hasMagnetometerSample = false
+        lastGyroTimestampNs = 0L
+
+        val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        val gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+
+        orientationMode = if (accelerometer != null && magnetometer != null) {
+            OrientationMode.KALMAN_FUSION
+        } else {
+            OrientationMode.ROTATION_VECTOR
+        }
 
         // Keep declination updated from location repository while this flow is active
         val locationJob = launch {
@@ -140,12 +244,83 @@ class SensorRepository @Inject constructor(
             }
         }
 
+        fun computeTiltCompensatedHeading(): Float? {
+            if (!hasAccelerometerSample || !hasMagnetometerSample) return null
+            val success = SensorManager.getRotationMatrix(
+                rotationMatrix,
+                inclinationMatrix,
+                accelerometerReading,
+                magnetometerReading
+            )
+            if (!success) return null
+
+            val rotation = getDisplayRotation()
+            val (axisX, axisY) = when (rotation) {
+                Surface.ROTATION_0 -> SensorManager.AXIS_X to SensorManager.AXIS_Y
+                Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
+                Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
+                Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
+                else -> SensorManager.AXIS_X to SensorManager.AXIS_Y
+            }
+            SensorManager.remapCoordinateSystem(rotationMatrix, axisX, axisY, adjustedRotationMatrix)
+            SensorManager.getOrientation(adjustedRotationMatrix, orientationAngles)
+
+            val magneticAzimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
+            val magneticHeading = (magneticAzimuth + 360) % 360
+            val declination = getMagneticDeclination()
+            return (magneticHeading + declination + 360) % 360
+        }
+
+        fun emitFusedHeading(timestampNs: Long, measurementHeading: Float? = null, isPredictUpdate: Boolean = false) {
+            measurementHeading?.let {
+                if (!kalmanFusion.hasEstimate()) {
+                    kalmanFusion.reset(it)
+                } else {
+                    kalmanFusion.correct(it)
+                }
+            }
+
+            val fusedHeading = kalmanFusion.getHeading() ?: measurementHeading ?: return
+
+            val alpha = adaptiveFilter.computeAlpha(timestampNs, fusedHeading)
+            val accuracyAcceptable = hasAcceptableAccuracy()
+            val shouldUpdateHeading = accuracyAcceptable || lastHeading == 0f || isPredictUpdate
+            val smoothedHeading = if (shouldUpdateHeading) {
+                val next = smoothAngle(lastHeading, fusedHeading, alpha)
+                lastHeading = next
+                next
+            } else {
+                lastHeading
+            }
+
+            val calibratedHeading = (smoothedHeading + calibrationOffset.toFloat() + 360) % 360
+
+            val currentStatus = (_orientationState.value as? OrientationState.Available)?.compassStatus ?: CompassStatus.OK
+
+            val newState = OrientationState.Available(
+                trueHeading = calibratedHeading,
+                compassStatus = currentStatus,
+                isPhoneFlat = isPhoneFlat,
+                isPhoneVertical = isPhoneVertical,
+                phoneTiltAngle = phoneTiltAngle,
+                shouldShowCalibration = calibrationVisible
+            )
+            _orientationState.value = newState
+            trySend(newState)
+        }
+
+        fun handleTiltCompensatedMeasurement(timestampNs: Long) {
+            val heading = computeTiltCompensatedHeading() ?: return
+            emitFusedHeading(timestampNs, measurementHeading = heading)
+        }
+
         val sensorEventListener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
                 if (event == null) return
 
                 when (event.sensor.type) {
                     Sensor.TYPE_ROTATION_VECTOR -> {
+                        if (orientationMode != OrientationMode.ROTATION_VECTOR) return
                         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
 
                         // Remap matrix based on display rotation for consistent azimuth
@@ -167,8 +342,15 @@ class SensorRepository @Inject constructor(
                         val trueHeading = (magneticHeading + declination + 360) % 360
 
                         val alpha = adaptiveFilter.computeAlpha(event.timestamp, trueHeading)
-                        val smoothedHeading = smoothAngle(lastHeading, trueHeading, alpha)
-                        lastHeading = smoothedHeading
+                        val accuracyAcceptable = hasAcceptableAccuracy()
+                        val shouldUpdateHeading = accuracyAcceptable || lastHeading == 0f
+                        val smoothedHeading = if (shouldUpdateHeading) {
+                            val next = smoothAngle(lastHeading, trueHeading, alpha)
+                            lastHeading = next
+                            next
+                        } else {
+                            lastHeading
+                        }
 
                         val calibratedHeading = (smoothedHeading + calibrationOffset.toFloat() + 360) % 360
 
@@ -179,80 +361,119 @@ class SensorRepository @Inject constructor(
                             compassStatus = currentStatus,
                             isPhoneFlat = isPhoneFlat,
                             isPhoneVertical = isPhoneVertical,
-                            phoneTiltAngle = phoneTiltAngle
+                            phoneTiltAngle = phoneTiltAngle,
+                            shouldShowCalibration = calibrationVisible
                         )
                         _orientationState.value = newState
-                        trySend(newState) // <-- THE FIX
+                        trySend(newState)
                     }
-                    Sensor.TYPE_MAGNETIC_FIELD -> checkInterference(event.values)
+                    Sensor.TYPE_MAGNETIC_FIELD -> {
+                        System.arraycopy(event.values, 0, magnetometerReading, 0, 3)
+                        hasMagnetometerSample = true
+                        checkInterference(event.values)
+                        if (orientationMode == OrientationMode.KALMAN_FUSION && hasAccelerometerSample) {
+                            handleTiltCompensatedMeasurement(event.timestamp)
+                        }
+                    }
                     Sensor.TYPE_ACCELEROMETER -> {
+                        adaptiveFilter.onAccelerometerEvent(event)
                         System.arraycopy(event.values, 0, accelerometerReading, 0, 3)
+                        hasAccelerometerSample = true
                         checkPhoneOrientation()
+                    }
+                    Sensor.TYPE_GYROSCOPE -> {
+                        if (orientationMode != OrientationMode.KALMAN_FUSION) return
+                        val previousTimestamp = lastGyroTimestampNs
+                        lastGyroTimestampNs = event.timestamp
+                        if (!kalmanFusion.hasEstimate()) return
+                        if (previousTimestamp != 0L) {
+                            val deltaSeconds = ((event.timestamp - previousTimestamp) / 1_000_000_000f).coerceAtLeast(0.0005f)
+                            val gyroRateDegPerSec = Math.toDegrees(event.values[2].toDouble()).toFloat()
+                            kalmanFusion.predict(gyroRateDegPerSec, deltaSeconds)
+                            emitFusedHeading(event.timestamp, isPredictUpdate = true)
+                        }
                     }
                 }
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-                if (sensor?.type == Sensor.TYPE_MAGNETIC_FIELD) {
-                    val status = when (accuracy) {
-                        SensorManager.SENSOR_STATUS_UNRELIABLE,
-                        SensorManager.SENSOR_STATUS_ACCURACY_LOW -> CompassStatus.NEEDS_CALIBRATION
-                        else -> CompassStatus.OK
-                    }
-                    if (_orientationState.value is OrientationState.Available) {
-                        val currentState = _orientationState.value as OrientationState.Available
-                        _orientationState.value = currentState.copy(compassStatus = status)
-                    }
+                if (sensor?.type != Sensor.TYPE_MAGNETIC_FIELD) return
+
+                val now = SystemClock.elapsedRealtime()
+                if (magnetometerAccuracy != accuracy) {
+                    lastAccuracyChangeMs = now
+                }
+                magnetometerAccuracy = accuracy
+                analytics.onMagnetometerAccuracyChanged(accuracy)
+
+                val status = when (accuracy) {
+                    SensorManager.SENSOR_STATUS_UNRELIABLE,
+                    SensorManager.SENSOR_STATUS_ACCURACY_LOW -> CompassStatus.NEEDS_CALIBRATION
+                    else -> CompassStatus.OK
+                }
+
+                updateCompassStatus(status)
+
+                when (status) {
+                    CompassStatus.NEEDS_CALIBRATION -> handleLowAccuracy(now, status)
+                    CompassStatus.OK -> handleAccuracyRecovered()
+                    else -> Unit
                 }
             }
         }
 
-        val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        val magneticFieldSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val magneticFieldSensor = magnetometer
 
-        if (rotationVectorSensor == null) {
+        if (orientationMode == OrientationMode.ROTATION_VECTOR && rotationVectorSensor == null) {
             Timber.e("❌ Rotation Vector Sensor not available.")
-            trySend(OrientationState.Initializing) // Or a specific error state
+            trySend(OrientationState.Initializing)
             awaitClose()
             return@callbackFlow
         }
         val sensorThread = HandlerThread("CompassSensors").also { it.start() }
         val sensorHandler = Handler(sensorThread.looper)
 
-        val requestedDelay = SensorManager.SENSOR_DELAY_GAME
-        var samplingDelay = requestedDelay
-        val rotationRegistered = sensorManager.registerListener(
-            sensorEventListener,
-            rotationVectorSensor,
-            requestedDelay,
-            sensorHandler
-        )
+        val targetSamplingPeriodUs = (1_000_000f / filterConfig.targetSamplingRateHz).toInt().coerceAtLeast(5_000)
+        val fallbackSamplingPeriodUs = (1_000_000f / filterConfig.minSamplingRateHz).toInt().coerceAtLeast(targetSamplingPeriodUs)
 
-        if (!rotationRegistered) {
-            samplingDelay = SensorManager.SENSOR_DELAY_UI
-            val fallbackRegistered = sensorManager.registerListener(
+        var samplingPeriodUs = targetSamplingPeriodUs
+        if (orientationMode == OrientationMode.ROTATION_VECTOR) {
+            var rotationRegistered = sensorManager.registerListener(
                 sensorEventListener,
                 rotationVectorSensor,
-                samplingDelay,
+                samplingPeriodUs,
                 sensorHandler
             )
 
-            if (!fallbackRegistered) {
-                Timber.e("❌ Failed to register rotation vector sensor at fallback rate")
-                sensorThread.quitSafely()
-                locationJob.cancel()
-                close(IllegalStateException("Rotation vector sensor registration failed"))
-                return@callbackFlow
+            if (!rotationRegistered) {
+                samplingPeriodUs = fallbackSamplingPeriodUs
+                rotationRegistered = sensorManager.registerListener(
+                    sensorEventListener,
+                    rotationVectorSensor,
+                    samplingPeriodUs,
+                    sensorHandler
+                )
+
+                if (!rotationRegistered) {
+                    Timber.e("❌ Failed to register rotation vector sensor at fallback rate")
+                    sensorThread.quitSafely()
+                    locationJob.cancel()
+                    close(IllegalStateException("Rotation vector sensor registration failed"))
+                    return@callbackFlow
+                }
             }
         }
 
-        // Register with whichever samplingDelay succeeded for rotation vector.
         magneticFieldSensor?.let {
-            sensorManager.registerListener(sensorEventListener, it, samplingDelay, sensorHandler)
+            sensorManager.registerListener(sensorEventListener, it, samplingPeriodUs, sensorHandler)
         }
         accelerometer?.let {
-            sensorManager.registerListener(sensorEventListener, it, samplingDelay, sensorHandler)
+            sensorManager.registerListener(sensorEventListener, it, samplingPeriodUs, sensorHandler)
+        }
+        if (orientationMode == OrientationMode.KALMAN_FUSION) {
+            gyroscope?.let {
+                sensorManager.registerListener(sensorEventListener, it, samplingPeriodUs, sensorHandler)
+            }
         }
 
         awaitClose {
@@ -262,39 +483,105 @@ class SensorRepository @Inject constructor(
         }
     }
 
-    private fun updateOrientation(rotationVector: FloatArray) {
-        try {
-            SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
-            SensorManager.getOrientation(rotationMatrix, orientationAngles)
+    fun onManualCalibrationRequested() {
+        Timber.d("🧭 Manual calibration requested")
+        showCalibrationPrompt(
+            source = CalibrationPromptSource.MANUAL,
+            status = (_orientationState.value as? OrientationState.Available)?.compassStatus
+                ?: CompassStatus.NEEDS_CALIBRATION
+        )
+    }
 
-            val magneticAzimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
-            val magneticHeading = (magneticAzimuth + 360) % 360
+    fun onCalibrationDismissed() {
+        Timber.d("🧭 Calibration overlay dismissed by user")
+        hideCalibrationPrompt(CalibrationDismissReason.USER_DISMISSED)
+    }
 
-            val declination = getMagneticDeclination()
-            val trueHeading = (magneticHeading + declination + 360) % 360
-
-            val alpha = adaptiveFilter.computeAlpha(System.nanoTime(), trueHeading)
-            val smoothedHeading = lastHeading + alpha * (trueHeading - lastHeading)
-            lastHeading = smoothedHeading
-
-            val calibratedHeading = (smoothedHeading + calibrationOffset.toFloat() + 360) % 360
-
-            val currentStatus = (_orientationState.value as? OrientationState.Available)?.compassStatus ?: CompassStatus.OK
-
-            val newState = OrientationState.Available(
-                trueHeading = calibratedHeading,
-                compassStatus = currentStatus,
-                isPhoneFlat = isPhoneFlat,
-                isPhoneVertical = isPhoneVertical,
-                phoneTiltAngle = phoneTiltAngle
-            )
-            _orientationState.value = newState
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Error processing orientation data")
+    private fun updateCompassStatus(status: CompassStatus) {
+        val current = _orientationState.value
+        if (current is OrientationState.Available && current.compassStatus != status) {
+            _orientationState.value = current.copy(compassStatus = status)
         }
     }
 
-    
+    private fun handleLowAccuracy(nowMs: Long, status: CompassStatus) {
+        if (lowAccuracyStartMs == 0L) {
+            lowAccuracyStartMs = nowMs
+        }
+        val elapsed = nowMs - lowAccuracyStartMs
+        val sinceChange = nowMs - lastAccuracyChangeMs
+        if (elapsed >= calibrationConfig.triggerDurationMs && sinceChange >= calibrationConfig.accuracyDebounceMs) {
+            showCalibrationPrompt(CalibrationPromptSource.AUTOMATIC, status)
+        }
+    }
+
+    private fun handleAccuracyRecovered() {
+        lowAccuracyStartMs = 0L
+        if (interferenceStartMs == 0L && calibrationVisible) {
+            hideCalibrationPrompt(CalibrationDismissReason.ACCURACY_RECOVERED)
+        }
+    }
+
+    private fun handleInterference(nowMs: Long) {
+        if (interferenceStartMs == 0L) {
+            interferenceStartMs = nowMs
+        }
+        if (nowMs - interferenceStartMs >= calibrationConfig.triggerDurationMs) {
+            showCalibrationPrompt(CalibrationPromptSource.AUTOMATIC, CompassStatus.INTERFERENCE)
+        }
+    }
+
+    private fun clearInterference() {
+        interferenceStartMs = 0L
+        if (lowAccuracyStartMs == 0L && calibrationVisible) {
+            hideCalibrationPrompt(CalibrationDismissReason.ACCURACY_RECOVERED)
+        }
+    }
+
+    private fun showCalibrationPrompt(source: CalibrationPromptSource, status: CompassStatus) {
+        val now = SystemClock.elapsedRealtime()
+        if (source == CalibrationPromptSource.AUTOMATIC && now < calibrationCooldownUntilMs) {
+            Timber.d("🧭 Calibration prompt suppressed (cooldown active)")
+            return
+        }
+
+        if (!calibrationVisible) {
+            calibrationVisible = true
+            analytics.onCalibrationPromptShown(source)
+        }
+
+        val current = _orientationState.value
+        if (current is OrientationState.Available) {
+            val updatedStatus = when (status) {
+                CompassStatus.NEEDS_CALIBRATION, CompassStatus.INTERFERENCE -> status
+                else -> current.compassStatus
+            }
+            _orientationState.value = current.copy(
+                compassStatus = updatedStatus,
+                shouldShowCalibration = true
+            )
+        }
+    }
+
+    private fun hideCalibrationPrompt(reason: CalibrationDismissReason) {
+        if (!calibrationVisible) return
+
+        calibrationVisible = false
+        if (reason == CalibrationDismissReason.USER_DISMISSED) {
+            calibrationCooldownUntilMs = SystemClock.elapsedRealtime() + calibrationConfig.cooldownMs
+        }
+        analytics.onCalibrationPromptDismissed(reason)
+
+        val current = _orientationState.value
+        if (current is OrientationState.Available) {
+            _orientationState.value = current.copy(shouldShowCalibration = false)
+        }
+    }
+
+    private fun hasAcceptableAccuracy(): Boolean {
+        return magnetometerAccuracy >= SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM
+    }
+
     private fun getMagneticDeclination(): Float = cachedDeclination
 
     private fun checkInterference(magneticField: FloatArray) {
@@ -312,13 +599,20 @@ class SensorRepository @Inject constructor(
 
         val status = if (outOfBandCount >= 10) CompassStatus.INTERFERENCE else CompassStatus.OK
 
-        if (_orientationState.value is OrientationState.Available) {
-            val currentState = _orientationState.value as OrientationState.Available
-            // Do not override explicit NEEDS_CALIBRATION from magnetometer accuracy
-            if (currentState.compassStatus != CompassStatus.NEEDS_CALIBRATION) {
-                // Require sustained in-band readings to clear INTERFERENCE
-                if (status == CompassStatus.OK && inBandCount < 20 && currentState.compassStatus == CompassStatus.INTERFERENCE) return
-                _orientationState.value = currentState.copy(compassStatus = status)
+        val now = SystemClock.elapsedRealtime()
+        if (status == CompassStatus.INTERFERENCE) {
+            handleInterference(now)
+        } else {
+            clearInterference()
+        }
+
+        val current = _orientationState.value
+        if (current is OrientationState.Available) {
+            if (current.compassStatus != CompassStatus.NEEDS_CALIBRATION) {
+                if (status == CompassStatus.OK && inBandCount < 20 && current.compassStatus == CompassStatus.INTERFERENCE) {
+                    return
+                }
+                _orientationState.value = current.copy(compassStatus = status)
             }
         }
     }

@@ -1,96 +1,118 @@
 package com.bizzkoot.qiblafinder.ui.calibration
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.bizzkoot.qiblafinder.R
+import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
 fun CalibrationOverlay(
     isVisible: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val haptics = LocalHapticFeedback.current
+    val announcementText = stringResource(R.string.calibration_overlay_accessibility_hint)
+    val overlayTitle = stringResource(R.string.calibration_overlay_title)
+    val overlayInstructions = stringResource(R.string.calibration_overlay_instructions)
+    val dismissLabel = stringResource(R.string.calibration_overlay_dismiss)
+
+    LaunchedEffect(isVisible) {
+        if (isVisible) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(150)
+        }
+    }
+
     AnimatedVisibility(
         visible = isVisible,
-        enter = slideInVertically(
-            initialOffsetY = { -it },
-            animationSpec = tween(300, easing = EaseOutCubic)
-        ) + fadeIn(animationSpec = tween(300)),
-        exit = slideOutVertically(
-            targetOffsetY = { -it },
-            animationSpec = tween(300, easing = EaseInCubic)
-        ) + fadeOut(animationSpec = tween(300))
+        enter = fadeIn(animationSpec = tween(durationMillis = 250)) +
+            scaleIn(initialScale = 0.95f, animationSpec = tween(durationMillis = 250)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 200)) +
+            scaleOut(targetScale = 0.95f, animationSpec = tween(durationMillis = 200))
     ) {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
+                .semantics { contentDescription = announcementText },
+            contentAlignment = Alignment.Center
         ) {
-            // Calibration card
-            Card(
+            Surface(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp)
+                    .padding(horizontal = 24.dp)
                     .fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                shape = RoundedCornerShape(20.dp),
+                tonalElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Header
                     Text(
-                        text = "Calibrate Compass",
+                        text = overlayTitle,
                         style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Instructions
+
+                    Spacer(modifier = Modifier.size(12.dp))
+
                     Text(
-                        text = "Move your phone in a figure-8 pattern to calibrate the compass sensor",
+                        text = overlayInstructions,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    // Animated figure-8 pattern
-                    CalibrationAnimation(
-                        modifier = Modifier.size(120.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    // Action buttons
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Dismiss")
+
+                    Spacer(modifier = Modifier.size(24.dp))
+
+                    FigureEightAnimation(modifier = Modifier.size(160.dp))
+
+                    Spacer(modifier = Modifier.size(24.dp))
+
+                    Button(onClick = onDismiss) {
+                        Text(text = dismissLabel)
                     }
                 }
             }
@@ -99,72 +121,55 @@ fun CalibrationOverlay(
 }
 
 @Composable
-fun CalibrationAnimation(
-    modifier: Modifier = Modifier
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "calibration")
-    val rotation by infiniteTransition.animateFloat(
+private fun FigureEightAnimation(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "figure8")
+    val phase = transition.animateFloat(
         initialValue = 0f,
-        targetValue = 360f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = LinearEasing),
+            animation = tween(durationMillis = 2400, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "rotation"
+        label = "figure8phase"
     )
-    
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val secondaryColor = MaterialTheme.colorScheme.secondary
-    
-    Canvas(modifier = modifier) {
-        val centerX = size.width / 2
-        val centerY = size.height / 2
-        val radius = size.minDimension / 3
-        
-        // Draw figure-8 pattern
-        val path = androidx.compose.ui.graphics.Path()
-        var firstPoint = true
-        
-        for (i in 0..360 step 5) {
-            val angle = Math.toRadians(i.toDouble())
-            val x = centerX + (radius * sin(angle) * cos(angle)).toFloat()
-            val y = centerY + (radius * sin(angle) * cos(angle) * cos(angle)).toFloat()
-            
-            if (firstPoint) {
+
+    val animationDescription = stringResource(R.string.calibration_overlay_animation_description)
+    val trailColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+    val dotColor = MaterialTheme.colorScheme.primary
+
+    Canvas(
+        modifier = modifier.semantics {
+            contentDescription = animationDescription
+        }
+    ) {
+        val width = size.width
+        val height = size.height
+        val centerX = width / 2f
+        val centerY = height / 2f
+        val radius = size.minDimension / 3f
+
+        val path = Path()
+        var initialized = false
+        for (degrees in 0..360 step 2) {
+            val angle = Math.toRadians(degrees.toDouble())
+            val sinValue = sin(angle)
+            val cosValue = cos(angle)
+            val x = centerX + (radius * sinValue * cosValue).toFloat()
+            val y = centerY + (radius * sinValue * cosValue * cosValue).toFloat()
+            if (!initialized) {
                 path.moveTo(x, y)
-                firstPoint = false
+                initialized = true
             } else {
                 path.lineTo(x, y)
             }
         }
-        
-        // Draw the figure-8 path
-        drawPath(
-            path = path,
-            color = primaryColor.copy(alpha = 0.3f),
-            style = Stroke(width = 4f, cap = StrokeCap.Round)
-        )
-        
-        // Draw animated dot following the path
-        val dotAngle = Math.toRadians(rotation.toDouble())
-        val dotX = centerX + (radius * sin(dotAngle) * cos(dotAngle)).toFloat()
-        val dotY = centerY + (radius * sin(dotAngle) * cos(dotAngle) * cos(dotAngle)).toFloat()
-        
-        drawCircle(
-            color = primaryColor,
-            radius = 8f,
-            center = Offset(dotX, dotY)
-        )
-        
-        // Draw phone icon with rotation
-        val phoneSize = 20f
-        val phoneX = centerX + (radius * 0.8f * cos(Math.toRadians(rotation.toDouble()))).toFloat()
-        val phoneY = centerY + (radius * 0.8f * sin(Math.toRadians(rotation.toDouble()))).toFloat()
-        
-        drawRect(
-            color = secondaryColor,
-            topLeft = Offset(phoneX - phoneSize/2, phoneY - phoneSize/2),
-            size = androidx.compose.ui.geometry.Size(phoneSize, phoneSize * 1.8f)
-        )
+
+        drawPath(path = path, color = trailColor, style = Stroke(width = 6f))
+
+        val animatedAngle = 2 * Math.PI * phase.value
+        val dotX = centerX + (radius * sin(animatedAngle) * cos(animatedAngle)).toFloat()
+        val dotY = centerY + (radius * sin(animatedAngle) * cos(animatedAngle) * cos(animatedAngle)).toFloat()
+
+        drawCircle(color = dotColor, radius = 10f, center = Offset(dotX, dotY))
     }
-} 
+}

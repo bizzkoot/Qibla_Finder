@@ -10,7 +10,10 @@ class AdaptiveCompassFilterTest {
 
     @Before
     fun setUp() {
-        filter = AdaptiveCompassFilter()
+        filter = AdaptiveCompassFilter(
+            config = CompassFilterConfig(),
+            analytics = CompassAnalytics.NO_OP
+        )
     }
 
     @Test

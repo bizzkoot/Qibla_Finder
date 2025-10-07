@@ -11,4 +11,11 @@
     <string name="loading_ar">Loading AR experience...</string>
     <string name="ar_error">AR Error</string>
     <string name="touch_to_place">Touch to place Qibla direction arrow</string>
+
+    <!-- Calibration overlay -->
+    <string name="calibration_overlay_title">Calibrate Compass</string>
+    <string name="calibration_overlay_instructions">Move your phone in a gentle figure-eight motion to improve sensor accuracy.</string>
+    <string name="calibration_overlay_dismiss">Got it</string>
+    <string name="calibration_overlay_accessibility_hint">Compass calibration required. Move your phone in a figure-eight pattern, then tap Got it.</string>
+    <string name="calibration_overlay_animation_description">Animated guide showing a figure-eight motion for compass calibration.</string>
 </resources>

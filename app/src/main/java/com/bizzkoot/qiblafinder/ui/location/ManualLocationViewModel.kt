@@ -43,7 +43,11 @@ data class ManualLocationUiState(
     val searchQuery: String = "",
     val isSearching: Boolean = false,
     val searchResults: List<GeocodingResult> = emptyList(),
-    val searchError: String? = null
+    val searchError: String? = null,
+    val pendingMeasurementRequestToken: Long? = null,
+    val measurementSnapshot: AngleMeasurementSnapshot? = null,
+    val isMeasurementOverlayVisible: Boolean = false,
+    val lastMeasuredAngle: Double? = null
 )
 
 class ManualLocationViewModel(
@@ -258,6 +262,79 @@ class ManualLocationViewModel(
         )
         updateQiblaInfo(loc)
         Timber.d("📍 Search result chosen: ${loc}")
+    }
+
+    fun startAngleMeasurement() {
+        val current = _uiState.value
+        if (!current.showQiblaDirection) {
+            Timber.w("📍 Angle measurement requested while Qibla direction is hidden")
+            return
+        }
+
+        if (current.pendingMeasurementRequestToken != null) {
+            Timber.d("📍 Angle measurement request ignored - another capture is in progress")
+            return
+        }
+
+        val requestToken = System.currentTimeMillis()
+        _uiState.value = current.copy(
+            pendingMeasurementRequestToken = requestToken,
+            measurementSnapshot = null,
+            isMeasurementOverlayVisible = false,
+            lastMeasuredAngle = null
+        )
+        Timber.d("📍 Angle measurement snapshot requested (token=$requestToken)")
+    }
+
+    fun onMeasurementSnapshotCaptured(token: Long, snapshot: AngleMeasurementSnapshot) {
+        val current = _uiState.value
+        if (current.pendingMeasurementRequestToken != token) {
+            Timber.w("📍 Ignoring stale measurement snapshot (token=$token)")
+            return
+        }
+
+        _uiState.value = current.copy(
+            pendingMeasurementRequestToken = null,
+            measurementSnapshot = snapshot,
+            isMeasurementOverlayVisible = true
+        )
+        Timber.d("📍 Angle measurement snapshot captured successfully (token=$token)")
+    }
+
+    fun onMeasurementSnapshotFailed(token: Long) {
+        val current = _uiState.value
+        if (current.pendingMeasurementRequestToken != token) {
+            Timber.w("📍 Ignoring stale measurement failure (token=$token)")
+            return
+        }
+
+        _uiState.value = current.copy(
+            pendingMeasurementRequestToken = null,
+            measurementSnapshot = null,
+            isMeasurementOverlayVisible = false
+        )
+        Timber.w("📍 Angle measurement snapshot failed (token=$token)")
+    }
+
+    fun onAngleMeasured(angle: Double) {
+        _uiState.value = _uiState.value.copy(lastMeasuredAngle = angle)
+        Timber.d("📍 Angle measurement updated: ${String.format("%.2f", angle)}°")
+    }
+
+    fun clearMeasurementAngle() {
+        _uiState.value = _uiState.value.copy(lastMeasuredAngle = null)
+        Timber.d("📍 Angle measurement cleared")
+    }
+
+    fun dismissMeasurementOverlay() {
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            isMeasurementOverlayVisible = false,
+            measurementSnapshot = null,
+            pendingMeasurementRequestToken = null,
+            lastMeasuredAngle = null
+        )
+        Timber.d("📍 Angle measurement overlay dismissed")
     }
 
     fun updateMapType(mapType: MapType) {

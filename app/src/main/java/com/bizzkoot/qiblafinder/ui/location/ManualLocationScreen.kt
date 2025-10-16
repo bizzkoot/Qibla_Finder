@@ -15,9 +15,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Satellite
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -106,6 +104,14 @@ fun ManualLocationScreen(
                     ) {
                         Icon(Icons.Default.LocationOn, contentDescription = "Recenter to initial GPS")
                     }
+                    IconButton(
+                        onClick = { viewModel.startAngleMeasurement() },
+                        enabled = uiState.showQiblaDirection &&
+                            uiState.pendingMeasurementRequestToken == null &&
+                            !uiState.isMeasurementOverlayVisible
+                    ) {
+                        Icon(Icons.Default.Straighten, contentDescription = "Measure angle to Qibla")
+                    }
                     MapTypeToggle(
                         selectedMapType = uiState.selectedMapType,
                         availableMapTypes = uiState.availableMapTypes,
@@ -193,6 +199,13 @@ fun ManualLocationScreen(
                     onPanStop = { viewModel.onPanStop() },
                     panelHeight = uiState.panelHeight,
                     isMapTypeChanging = uiState.isMapTypeChanging,
+                    measurementRequestToken = uiState.pendingMeasurementRequestToken,
+                    onMeasurementSnapshotCaptured = { token, snapshot ->
+                        viewModel.onMeasurementSnapshotCaptured(token, snapshot)
+                    },
+                    onMeasurementSnapshotFailed = { token ->
+                        viewModel.onMeasurementSnapshotFailed(token)
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -341,10 +354,39 @@ fun ManualLocationScreen(
                             "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB / ${uiState.cacheLimitMb}MB",
                             style = typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            )
+        }
+    }
+
+    if (uiState.pendingMeasurementRequestToken != null && uiState.measurementSnapshot == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Preparing angle measurement…",
+                    style = typography.bodySecondary,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
+        }
+    }
+
+    if (uiState.isMeasurementOverlayVisible && uiState.measurementSnapshot != null) {
+        AngleMeasurementOverlay(
+            snapshot = uiState.measurementSnapshot,
+            lastMeasuredAngle = uiState.lastMeasuredAngle,
+            onAngleMeasured = { angle -> viewModel.onAngleMeasured(angle) },
+            onClearMeasurement = { viewModel.clearMeasurementAngle() },
+            onDismiss = { viewModel.dismissMeasurementOverlay() }
+        )
+    }
+}
         },
                 onHeightMeasured = { height -> viewModel.updatePanelHeight(height) }
             )

@@ -10,8 +10,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
+import androidx.compose.material3.Divider
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,8 +34,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -32,9 +47,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import kotlin.math.abs
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import android.graphics.Paint as AndroidPaint
+import android.graphics.Color as AndroidColor
 import kotlin.math.atan2
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 @Composable
 fun AngleMeasurementOverlay(
@@ -49,8 +69,9 @@ fun AngleMeasurementOverlay(
     val qiblaStart = remember(snapshot) { Offset(snapshot.qiblaLineStart.x, snapshot.qiblaLineStart.y) }
     val qiblaEnd = remember(snapshot) { Offset(snapshot.qiblaLineEnd.x, snapshot.qiblaLineEnd.y) }
 
-    var touchPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    var calculatedAngle by remember { mutableStateOf(lastMeasuredAngle) }
+    var touchPoints by remember(snapshot) { mutableStateOf<List<Offset>>(emptyList()) }
+    var calculatedAngle by remember(snapshot) { mutableStateOf(lastMeasuredAngle) }
+    var overlayScale by remember(snapshot) { mutableStateOf(1f) }
 
     LaunchedEffect(lastMeasuredAngle) {
         calculatedAngle = lastMeasuredAngle
@@ -59,7 +80,7 @@ fun AngleMeasurementOverlay(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f))
+            .background(Color.Black.copy(alpha = 0.65f))
     ) {
         val density = LocalDensity.current
         val containerWidth = with(density) { maxWidth.toPx() }
@@ -70,55 +91,68 @@ fun AngleMeasurementOverlay(
         val imageAspect = imageWidth / imageHeight
         val containerAspect = if (containerHeight == 0f) 1f else containerWidth / containerHeight
 
-        val scale = if (containerAspect > imageAspect) {
+        val baseScale = if (containerAspect > imageAspect) {
             containerHeight / imageHeight
         } else {
             containerWidth / imageWidth
         }
 
-        val drawWidth = imageWidth * scale
-        val drawHeight = imageHeight * scale
-        val offsetX = (containerWidth - drawWidth) / 2f
-        val offsetY = (containerHeight - drawHeight) / 2f
+        val minOverlayScale = 1f
+        val maxOverlayScale = 12f
+        val scaleStep = 1.3f
 
-        val qiblaStartScaled = Offset(offsetX + qiblaStart.x * scale, offsetY + qiblaStart.y * scale)
-        val qiblaEndScaled = Offset(offsetX + qiblaEnd.x * scale, offsetY + qiblaEnd.y * scale)
+        val totalScale = baseScale * overlayScale
+        val scaledWidth = imageWidth * totalScale
+        val scaledHeight = imageHeight * totalScale
+        val offsetX = (containerWidth - scaledWidth) / 2f
+        val offsetY = (containerHeight - scaledHeight) / 2f
 
-        val projectedTouches = touchPoints.map { Offset(offsetX + it.x * scale, offsetY + it.y * scale) }
+        val qiblaStartScaled = Offset(offsetX + qiblaStart.x * totalScale, offsetY + qiblaStart.y * totalScale)
+        val qiblaEndScaled = Offset(offsetX + qiblaEnd.x * totalScale, offsetY + qiblaEnd.y * totalScale)
+        val projectedTouches = touchPoints.map { Offset(offsetX + it.x * totalScale, offsetY + it.y * totalScale) }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(imageWidth, imageHeight, offsetX, offsetY, scale) {
-                    detectTapGestures { pointerPosition ->
-                        val imageX = (pointerPosition.x - offsetX) / scale
-                        val imageY = (pointerPosition.y - offsetY) / scale
+        val labelPaint = remember(density) {
+            AndroidPaint().apply {
+                color = AndroidColor.WHITE
+                isAntiAlias = true
+                textAlign = AndroidPaint.Align.LEFT
+            }
+        }
+        labelPaint.textSize = with(density) { 12.sp.toPx() }
 
-                        if (imageX in 0f..imageWidth && imageY in 0f..imageHeight) {
-                            val newPoint = Offset(imageX, imageY)
-                            touchPoints = when (touchPoints.size) {
-                                0 -> listOf(newPoint)
-                                1 -> listOf(touchPoints.first(), newPoint)
-                                else -> listOf(newPoint)
-                            }
+        Box(modifier = Modifier.fillMaxSize()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(imageWidth, imageHeight, offsetX, offsetY, totalScale) {
+                        detectTapGestures { pointerPosition ->
+                            val imageX = (pointerPosition.x - offsetX) / totalScale
+                            val imageY = (pointerPosition.y - offsetY) / totalScale
 
-                            if (touchPoints.size == 2) {
-                                val angle = calculateAngleDifference(
-                                    touchPoints[0],
-                                    touchPoints[1],
-                                    qiblaStart,
-                                    qiblaEnd
-                                )
-                                calculatedAngle = angle
-                                onAngleMeasured(angle)
+                            if (imageX in 0f..imageWidth && imageY in 0f..imageHeight) {
+                                val newPoint = Offset(imageX, imageY)
+                                touchPoints = when (touchPoints.size) {
+                                    0 -> listOf(newPoint)
+                                    1 -> listOf(touchPoints.first(), newPoint)
+                                    else -> listOf(newPoint)
+                                }
+
+                                if (touchPoints.size == 2) {
+                                    val angle = calculateAngleDifference(
+                                        touchPoints[0],
+                                        touchPoints[1],
+                                        qiblaStart,
+                                        qiblaEnd
+                                    )
+                                    calculatedAngle = angle
+                                    onAngleMeasured(angle)
+                                }
                             }
                         }
                     }
-                }
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            ) {
                 val dstOffset = IntOffset(offsetX.roundToInt(), offsetY.roundToInt())
-                val dstSize = IntSize(drawWidth.roundToInt().coerceAtLeast(1), drawHeight.roundToInt().coerceAtLeast(1))
+                val dstSize = IntSize(scaledWidth.roundToInt().coerceAtLeast(1), scaledHeight.roundToInt().coerceAtLeast(1))
 
                 drawImage(
                     image = imageBitmap,
@@ -135,71 +169,216 @@ fun AngleMeasurementOverlay(
 
                 if (projectedTouches.size == 2) {
                     drawLine(
+                        color = Color.Black.copy(alpha = 0.45f),
+                        start = projectedTouches[0],
+                        end = projectedTouches[1],
+                        strokeWidth = 5.dp.toPx()
+                    )
+                    drawLine(
                         color = Color.Yellow,
                         start = projectedTouches[0],
                         end = projectedTouches[1],
                         strokeWidth = 3.dp.toPx()
                     )
+
+                    calculatedAngle?.let { angle ->
+                        val pivot = projectedTouches[0]
+                        val userVector = projectedTouches[1] - projectedTouches[0]
+                        val qiblaVector = qiblaEndScaled - qiblaStartScaled
+                        val userLength = sqrt((userVector.x * userVector.x + userVector.y * userVector.y).toDouble()).toFloat()
+                        val qiblaLength = sqrt((qiblaVector.x * qiblaVector.x + qiblaVector.y * qiblaVector.y).toDouble()).toFloat()
+
+                        if (userLength > 1f && qiblaLength > 1f) {
+                            val userAngleDeg = Math.toDegrees(atan2(userVector.y.toDouble(), userVector.x.toDouble())).toFloat()
+                            val arcRadius = min(userLength, 140.dp.toPx())
+                            val arcTopLeft = Offset(pivot.x - arcRadius, pivot.y - arcRadius)
+                            val arcSize = Size(arcRadius * 2, arcRadius * 2)
+
+                            drawArc(
+                                color = Color.Yellow.copy(alpha = 0.7f),
+                                startAngle = userAngleDeg,
+                                sweepAngle = angle.toFloat(),
+                                useCenter = false,
+                                topLeft = arcTopLeft,
+                                size = arcSize,
+                                style = Stroke(width = 2.dp.toPx())
+                            )
+
+                            val normalizedQibla = Offset(
+                                (qiblaVector.x / qiblaLength).toFloat(),
+                                (qiblaVector.y / qiblaLength).toFloat()
+                            )
+                            val qiblaReferenceEnd = Offset(
+                                pivot.x + normalizedQibla.x * arcRadius,
+                                pivot.y + normalizedQibla.y * arcRadius
+                            )
+                            drawLine(
+                                color = Color(0xFF81C784),
+                                start = pivot,
+                                end = qiblaReferenceEnd,
+                                strokeWidth = 2.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f))
+                            )
+                        }
+                    }
                 }
 
-                projectedTouches.forEach { point ->
+                val labelOffset = 8.dp.toPx()
+                projectedTouches.forEachIndexed { index, point ->
+                    drawCircle(
+                        color = Color.Black.copy(alpha = 0.5f),
+                        radius = 8.dp.toPx(),
+                        center = point
+                    )
                     drawCircle(
                         color = Color.Yellow,
                         radius = 6.dp.toPx(),
                         center = point
+                    )
+
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "P${index + 1}",
+                        point.x + labelOffset,
+                        point.y - labelOffset,
+                        labelPaint
+                    )
+                }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                color = Color.Black.copy(alpha = 0.55f),
+                tonalElevation = 6.dp,
+                shadowElevation = 6.dp,
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .widthIn(max = 360.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = buildString {
+                            append("Angle to Qibla")
+                            calculatedAngle?.let {
+                                val formatted = if (it >= 0) "+${it.roundToInt()}" else "${it.roundToInt()}"
+                                append(": $formatted°")
+                            }
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Divider(color = Color.White.copy(alpha = 0.25f))
+                    Text(
+                        text = "Qibla bearing ${snapshot.qiblaBearing.roundToInt()}°",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                    calculatedAngle?.let {
+                        Text(
+                            text = when {
+                                it > 0 -> "Rotate clockwise from Point 1 → Point 2 to align with the Qibla line."
+                                it < 0 -> "Rotate counter-clockwise from Point 1 → Point 2 to align with the Qibla line."
+                                else -> "Your reference line is aligned with the Qibla direction."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.95f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Text(
+                        text = "Point 1 sets the arc pivot. Point 2 extends your reference line.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = if (touchPoints.size < 2) "Tap two points to draw your reference line" else "Tap again to start a new measurement",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.9f),
+                        textAlign = TextAlign.Center
                     )
                 }
             }
 
             Column(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+                    .zIndex(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = buildString {
-                        append("Angle to Qibla")
-                        calculatedAngle?.let { append(": ${it.roundToInt()}°") }
+                FloatingActionButton(
+                    onClick = {
+                        overlayScale = (overlayScale * scaleStep).coerceAtMost(maxOverlayScale)
                     },
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = "Qibla bearing ${snapshot.qiblaBearing.roundToInt()}°",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = if (touchPoints.size < 2) "Tap two points to draw your reference line" else "Tap again to start a new measurement",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.9f),
-                    textAlign = TextAlign.Center
-                )
+                    shape = CircleShape,
+                    containerColor = Color.Black.copy(alpha = 0.55f),
+                    contentColor = Color.White,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Zoom in")
+                }
+
+                FloatingActionButton(
+                    onClick = {
+                        overlayScale = (overlayScale / scaleStep).coerceAtLeast(minOverlayScale)
+                    },
+                    shape = CircleShape,
+                    containerColor = Color.Black.copy(alpha = 0.55f),
+                    contentColor = Color.White,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Filled.Remove, contentDescription = "Zoom out")
+                }
+
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = String.format("%.1fx", overlayScale),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
 
-            Row(
+            Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(24.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(start = 24.dp, end = 96.dp, bottom = 24.dp),
+                color = Color.Black.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(24.dp)
             ) {
-                TextButton(
-                    onClick = {
-                        touchPoints = emptyList()
-                        calculatedAngle = null
-                        onClearMeasurement()
-                    },
-                    enabled = touchPoints.isNotEmpty() || calculatedAngle != null
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Clear", color = Color.White)
-                }
-                Button(onClick = onDismiss) {
-                    Text("Close")
+                    TextButton(
+                        onClick = {
+                            touchPoints = emptyList()
+                            calculatedAngle = null
+                            onClearMeasurement()
+                        },
+                        enabled = touchPoints.isNotEmpty() || calculatedAngle != null
+                    ) {
+                        Text("Clear", color = Color.White)
+                    }
+                    Button(onClick = onDismiss) {
+                        Text("Close")
+                    }
                 }
             }
         }
@@ -228,5 +407,5 @@ private fun calculateAngleDifference(
     var difference = qiblaAngle - userAngle
     difference = ((difference + 540) % 360) - 180
 
-    return abs(difference)
+    return difference
 }

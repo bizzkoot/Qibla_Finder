@@ -37,6 +37,15 @@ data class QiblaDirectionState(
 )
 
 /**
+ * Result of rendering the simplified Qibla arrow anchored at the drop pin.
+ */
+data class SimpleQiblaArrowRenderResult(
+    val start: Offset,
+    val end: Offset,
+    val bearing: Double
+)
+
+/**
  * Data class representing viewport bounds for efficient path clipping
  */
 data class ViewportBounds(
@@ -1196,7 +1205,7 @@ class QiblaDirectionOverlay {
         userLatitude: Double,
         userLongitude: Double,
         mapType: MapType
-    ) {
+    ): SimpleQiblaArrowRenderResult? {
         with(drawScope) {
             try {
                 // Calculate Qibla bearing using Great Circle method
@@ -1245,7 +1254,12 @@ class QiblaDirectionOverlay {
                         drawSimpleArrowHead(arrowTip, bearingRad, outlineColor)
                         
                         Timber.d("📍 Simple Qibla arrow rendered: bearing=${String.format("%.1f", qiblaBearing)}°, length=${String.format("%.0f", optimalArrowLength)}px, from=${dropPinCenter}, to=${arrowTip}")
-                        
+
+                        return SimpleQiblaArrowRenderResult(
+                            start = dropPinCenter,
+                            end = arrowTip,
+                            bearing = qiblaBearing
+                        )
                     }
                     is GeodesyResult.Error -> {
                         // Draw error indicator at drop pin center
@@ -1272,12 +1286,12 @@ class QiblaDirectionOverlay {
                         )
                         
                         Timber.w("📍 Qibla calculation error: ${bearingResult.message}")
+                        return null
                     }
                 }
-                
+
             } catch (e: Exception) {
                 Timber.e(e, "📍 Error rendering simple Qibla arrow")
-                
                 // Draw fallback error indicator
                 drawCircle(
                     color = Color.Red.copy(alpha = 0.5f),
@@ -1285,8 +1299,10 @@ class QiblaDirectionOverlay {
                     center = dropPinCenter,
                     style = Stroke(width = 2f)
                 )
+                return null
             }
         }
+        return null
     }
     
     /**

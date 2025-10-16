@@ -1,6 +1,7 @@
 package com.bizzkoot.qiblafinder.ui.location
 
 import android.graphics.Bitmap
+import android.graphics.PointF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -23,13 +24,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Canvas as ComposeCanvas
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
 import kotlinx.coroutines.isActive
@@ -99,6 +110,93 @@ private fun calculateZoomAdaptiveThreshold(digitalZoomFactor: Double, config: Di
     }.coerceAtLeast(5.0) // Minimum threshold
 }
 
+private fun DrawScope.renderMapScene(
+    tileStateCache: Map<String, TileLoadState>,
+    mapType: MapType,
+    tileX: Double,
+    tileY: Double,
+    zoom: Int,
+    digitalZoom: Double,
+    tileManager: OpenStreetMapTileManager,
+    showQiblaDirection: Boolean,
+    qiblaOverlay: QiblaDirectionOverlay
+): SimpleQiblaArrowRenderResult? {
+    val centerX = size.width / 2f
+    val centerY = size.height / 2f
+
+    withTransform({
+        scale(digitalZoom.toFloat(), digitalZoom.toFloat(), pivot = Offset(centerX, centerY))
+    }) {
+        val fractionalTileX = tileX - floor(tileX)
+        val fractionalTileY = tileY - floor(tileY)
+
+        val tileOffsetX = (fractionalTileX * TILE_SIZE).toFloat()
+        val tileOffsetY = (fractionalTileY * TILE_SIZE).toFloat()
+
+        val canvasCenter = Offset(size.width / 2f, size.height / 2f)
+
+        tileStateCache.forEach { (cacheKey, state) ->
+            val tile = parseTileCacheKey(cacheKey)
+            if (tile != null && tile.mapType == mapType) {
+                val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE.toFloat() - tileOffsetX + canvasCenter.x
+                val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE.toFloat() - tileOffsetY + canvasCenter.y
+
+                when (state) {
+                    is TileLoadState.Loading -> {
+                        drawRect(
+                            color = Color.LightGray,
+                            topLeft = Offset(drawX, drawY),
+                            size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
+                        )
+                    }
+                    is TileLoadState.LowRes -> {
+                        drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+                    }
+                    is TileLoadState.HighRes -> {
+                        drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+                    }
+                    is TileLoadState.Failed -> {
+                        drawRect(
+                            color = Color.Gray,
+                            topLeft = Offset(drawX, drawY),
+                            size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val arrowResult = if (showQiblaDirection) {
+        val (currentLat, currentLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(
+            tileX,
+            tileY,
+            zoom
+        )
+
+        qiblaOverlay.renderSimpleQiblaArrow(
+            drawScope = this,
+            dropPinCenter = Offset(centerX, centerY),
+            userLatitude = currentLat,
+            userLongitude = currentLng,
+            mapType = mapType
+        )
+    } else {
+        null
+    }
+
+    val pinColor = Color.Red
+    drawCircle(color = pinColor, radius = 15f, center = Offset(centerX, centerY))
+    drawCircle(color = Color.White, radius = 3f, center = Offset(centerX, centerY))
+
+    val accuracyInMeters = getAccuracyForZoomWithDigitalZoom(zoom, digitalZoom)
+    val accuracyInPixels = (tileManager.metersToPixels(accuracyInMeters.toFloat(), zoom) * digitalZoom).toFloat()
+    drawCircle(color = Color.Red.copy(alpha = 0.1f), radius = accuracyInPixels, center = Offset(centerX, centerY))
+    drawCircle(color = Color.Red, radius = accuracyInPixels, center = Offset(centerX, centerY), style = Stroke(width = 2f))
+
+    return arrowResult
+}
+
 @Composable
 fun OpenStreetMapView(
     currentLocation: MapLocation,
@@ -114,9 +212,14 @@ fun OpenStreetMapView(
     panelHeight: Int = 0,
     isMapTypeChanging: Boolean = false,
     onRecenterConsumed: () -> Unit = {},
+    measurementRequestToken: Long? = null,
+    onMeasurementSnapshotCaptured: (Long, AngleMeasurementSnapshot) -> Unit = { _, _ -> },
+    onMeasurementSnapshotFailed: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
     val tileManager = remember(cacheLimitMb) {
         OpenStreetMapTileManager(context, cacheLimitMb)
     }
@@ -131,6 +234,10 @@ fun OpenStreetMapView(
     var digitalZoomIndicator by remember { mutableStateOf(false) }
     // Viewport-only burst loading when out-of-bounds at high digital zoom
     // Digital zoom policy: always load visible tiles; no buffer
+
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastArrowResult by remember { mutableStateOf<SimpleQiblaArrowRenderResult?>(null) }
+    var handledMeasurementToken by remember { mutableStateOf<Long?>(null) }
     
     // --- Out-of-bounds and refresh state ---
     var outOfBoundsState by remember { mutableStateOf(OutOfBoundsState()) }
@@ -533,95 +640,110 @@ fun OpenStreetMapView(
                 )
             }
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val centerX = size.width / 2f
-            val centerY = size.height / 2f
-
-            withTransform({
-                scale(digitalZoom.toFloat(), digitalZoom.toFloat(), pivot = Offset(centerX, centerY))
-            }) {
-                val fractionalTileX = tileX - floor(tileX)
-                val fractionalTileY = tileY - floor(tileY)
-
-                val tileOffsetX = (fractionalTileX * TILE_SIZE).toFloat()
-                val tileOffsetY = (fractionalTileY * TILE_SIZE).toFloat()
-
-                // Center point of the canvas, this is where the pin is
-                val canvasCenter = Offset(size.width / 2f, size.height / 2f)
-
-                tileStateCache.forEach { (cacheKey, state) ->
-                    val tile = parseTileCacheKey(cacheKey)
-                    if (tile != null && tile.mapType == mapType) {
-                        val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE.toFloat() - tileOffsetX + canvasCenter.x
-                        val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE.toFloat() - tileOffsetY + canvasCenter.y
-
-                        when (state) {
-                            is TileLoadState.Loading -> {
-                                // Optional: Draw a placeholder rectangle
-                                drawRect(
-                                    color = Color.LightGray,
-                                    topLeft = Offset(drawX, drawY),
-                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
-                                )
-                            }
-                            is TileLoadState.LowRes -> {
-                                // Draw the low-res bitmap, it will be scaled up by the canvas transform
-                                drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
-                            }
-                            is TileLoadState.HighRes -> {
-                                // Draw the final, sharp high-res bitmap
-                                drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
-                            }
-                            is TileLoadState.Failed -> {
-                                // Optional: Draw an error indicator
-                                drawRect(
-                                    color = Color.Gray,
-                                    topLeft = Offset(drawX, drawY),
-                                    size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
-                                )
-                                // You could also draw an 'X' or other indicator
-                            }
-                        }
-                    }
-                }
-            }
-
-            // --- Draw Qibla Direction Arrow (Simple, aligned with drop pin) ---
-            if (showQiblaDirection) {
-                // Get the current coordinate that the drop pin represents
-                val (currentLat, currentLng) = PrecisionCoordinateTransformer.highPrecisionTileToLatLng(
-                    tileX, tileY, zoom
-                )
-                
-                // Render simple Qibla arrow using same anchor point as drop pin
-                qiblaOverlay.renderSimpleQiblaArrow(
-                    drawScope = this,
-                    dropPinCenter = Offset(centerX, centerY), // Same as drop pin
-                    userLatitude = currentLat,
-                    userLongitude = currentLng,
-                    mapType = mapType
-                )
-            }
-
-            // --- Draw Location Pin (always at the center of the screen) ---
-            val pinColor = Color.Red
-            drawCircle(color = pinColor, radius = 15f, center = Offset(centerX, centerY))
-            drawCircle(color = Color.White, radius = 3f, center = Offset(centerX, centerY))
-
-            // --- Draw Accuracy Circle (around the pin) ---
-            val accuracyInMeters = getAccuracyForZoomWithDigitalZoom(zoom, digitalZoom)
-            val accuracyInPixels = (tileManager.metersToPixels(accuracyInMeters.toFloat(), zoom) * digitalZoom).toFloat()
-            drawCircle(color = Color.Red.copy(alpha = 0.1f), radius = accuracyInPixels, center = Offset(centerX, centerY))
-            drawCircle(color = Color.Red, radius = accuracyInPixels, center = Offset(centerX, centerY), style = Stroke(width = 2f))
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { canvasSize = it }
+        ) {
+            lastArrowResult = renderMapScene(
+                tileStateCache = tileStateCache,
+                mapType = mapType,
+                tileX = tileX,
+                tileY = tileY,
+                zoom = zoom,
+                digitalZoom = digitalZoom,
+                tileManager = tileManager,
+                showQiblaDirection = showQiblaDirection,
+                qiblaOverlay = qiblaOverlay
+            )
         }
 
         if (isLoading && tileStateCache.isEmpty()) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
 
+        LaunchedEffect(measurementRequestToken, canvasSize, lastArrowResult, mapType, digitalZoom, showQiblaDirection) {
+            val token = measurementRequestToken
+            if (token == null) {
+                handledMeasurementToken = null
+                return@LaunchedEffect
+            }
+
+            if (handledMeasurementToken == token) {
+                return@LaunchedEffect
+            }
+
+            if (canvasSize == IntSize.Zero) {
+                return@LaunchedEffect
+            }
+
+            val currentArrow = lastArrowResult
+            if (currentArrow == null) {
+                Timber.w("📍 Measurement snapshot requested but Qibla arrow is unavailable")
+                onMeasurementSnapshotFailed(token)
+                handledMeasurementToken = token
+                return@LaunchedEffect
+            }
+
+            try {
+                val offscreenBitmap = ImageBitmap(canvasSize.width.coerceAtLeast(1), canvasSize.height.coerceAtLeast(1))
+                var snapshotArrow: SimpleQiblaArrowRenderResult? = null
+
+                CanvasDrawScope().draw(
+                    density = density,
+                    layoutDirection = layoutDirection,
+                    canvas = ComposeCanvas(offscreenBitmap),
+                    size = Size(canvasSize.width.toFloat(), canvasSize.height.toFloat())
+                ) {
+                    snapshotArrow = renderMapScene(
+                        tileStateCache = tileStateCache,
+                        mapType = mapType,
+                        tileX = tileX,
+                        tileY = tileY,
+                        zoom = zoom,
+                        digitalZoom = digitalZoom,
+                        tileManager = tileManager,
+                        showQiblaDirection = showQiblaDirection,
+                        qiblaOverlay = qiblaOverlay
+                    )
+                }
+
+                val renderedArrow = snapshotArrow ?: currentArrow
+
+                var bitmap = offscreenBitmap.asAndroidBitmap()
+                var startOffset = renderedArrow.start
+                var endOffset = renderedArrow.end
+
+                if (DeviceCapabilitiesDetector.isLowEndDevice()) {
+                    val scaleFactor = 0.75f
+                    val scaledWidth = (bitmap.width * scaleFactor).roundToInt().coerceAtLeast(1)
+                    val scaledHeight = (bitmap.height * scaleFactor).roundToInt().coerceAtLeast(1)
+                    bitmap = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+                    startOffset = Offset(startOffset.x * scaleFactor, startOffset.y * scaleFactor)
+                    endOffset = Offset(endOffset.x * scaleFactor, endOffset.y * scaleFactor)
+                    Timber.d("📍 Low-end snapshot downscaled to ${scaledWidth}x${scaledHeight}")
+                }
+
+                onMeasurementSnapshotCaptured(
+                    token,
+                    AngleMeasurementSnapshot(
+                        bitmap = bitmap,
+                        qiblaLineStart = PointF(startOffset.x, startOffset.y),
+                        qiblaLineEnd = PointF(endOffset.x, endOffset.y),
+                        qiblaBearing = renderedArrow.bearing
+                    )
+                )
+            } catch (throwable: Throwable) {
+                Timber.e(throwable, "📍 Failed to capture angle measurement snapshot")
+                onMeasurementSnapshotFailed(token)
+            } finally {
+                handledMeasurementToken = token
+            }
+        }
+
         // --- Digital Zoom Indicator ---
         if (digitalZoomIndicator) {
-            val overlayTopPadding = with(LocalDensity.current) { panelHeight.toDp() + 16.dp }
+            val overlayTopPadding = with(density) { panelHeight.toDp() + 16.dp }
             Card(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -712,7 +834,6 @@ fun OpenStreetMapView(
         // Alert removed intentionally (we now auto-load visible tiles in digital zoom)
         
         // --- UI Elements (Zoom, Info) ---
-        val density = LocalDensity.current
         val dynamicTopPadding = with(density) { panelHeight.toDp() + 16.dp }
         Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = dynamicTopPadding, end = 16.dp)) {
             IconButton(

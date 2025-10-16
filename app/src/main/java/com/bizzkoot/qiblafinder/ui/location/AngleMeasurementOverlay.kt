@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.roundToInt
@@ -115,10 +117,13 @@ fun AngleMeasurementOverlay(
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
+                val dstOffset = IntOffset(offsetX.roundToInt(), offsetY.roundToInt())
+                val dstSize = IntSize(drawWidth.roundToInt().coerceAtLeast(1), drawHeight.roundToInt().coerceAtLeast(1))
+
                 drawImage(
                     image = imageBitmap,
-                    topLeft = Offset(offsetX, offsetY),
-                    size = androidx.compose.ui.geometry.Size(drawWidth, drawHeight)
+                    dstOffset = dstOffset,
+                    dstSize = dstSize
                 )
 
                 drawLine(

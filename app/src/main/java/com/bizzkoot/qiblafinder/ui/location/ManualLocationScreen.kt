@@ -1,5 +1,6 @@
 package com.bizzkoot.qiblafinder.ui.location
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -7,7 +8,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -15,7 +16,6 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Satellite
-import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -28,13 +28,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
+import com.bizzkoot.qiblafinder.R
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -45,8 +46,8 @@ import javax.inject.Inject
  */
 @Composable
 fun MeasuredTopPanel(
-    content: @Composable () -> Unit,
-    onHeightMeasured: (Int) -> Unit
+    onHeightMeasured: (Int) -> Unit,
+    content: @Composable BoxScope.() -> Unit
 ) {
     Box(
         modifier = Modifier.onGloballyPositioned { coordinates ->
@@ -110,7 +111,10 @@ fun ManualLocationScreen(
                             uiState.pendingMeasurementRequestToken == null &&
                             !uiState.isMeasurementOverlayVisible
                     ) {
-                        Icon(Icons.Default.Straighten, contentDescription = "Measure angle to Qibla")
+                        Icon(
+                            painter = painterResource(R.drawable.ic_protractor),
+                            contentDescription = "Measure angle to Qibla"
+                        )
                     }
                     MapTypeToggle(
                         selectedMapType = uiState.selectedMapType,
@@ -127,14 +131,13 @@ fun ManualLocationScreen(
                 .padding(paddingValues)
         ) {
             // Map View as the background
-            if (uiState.isLoading && uiState.currentLocation == null) { // Show loading only if location is not yet available
+            if (uiState.isLoading && uiState.currentLocation == null) {
+                // Show loading only if location is not yet available
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -155,9 +158,7 @@ fun ManualLocationScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = "Error loading map",
                             style = typography.titleTertiary,
@@ -170,15 +171,13 @@ fun ManualLocationScreen(
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { viewModel.refreshLocation() }
-                        ) {
+                        Button(onClick = { viewModel.refreshLocation() }) {
                             Text("Retry")
                         }
                     }
                 }
             } else {
-                val currentLocation = uiState.currentLocation ?: MapLocation(3.1390, 101.6869) // Fallback
+                val currentLocation = uiState.currentLocation ?: MapLocation(3.1390, 101.6869) // Fallback to Kuala Lumpur
                 OpenStreetMapView(
                     currentLocation = currentLocation,
                     recenterTo = uiState.recenterTo,
@@ -212,193 +211,168 @@ fun ManualLocationScreen(
 
             // Top Instructions Card wrapped with MeasuredTopPanel for dynamic positioning
             MeasuredTopPanel(
-                content = {
+                onHeightMeasured = { height -> viewModel.updatePanelHeight(height) }
+            ) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
-                ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Adjust Your Location",
-                            style = typography.titleTertiary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        
-                        // Qibla Direction Toggle Button
-                        IconButton(
-                            onClick = { viewModel.toggleQiblaDirection() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (uiState.showQiblaDirection) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (uiState.showQiblaDirection) "Hide Qibla direction" else "Show Qibla direction",
-                                tint = if (uiState.showQiblaDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Drag the pin to your exact location. The green line shows the direction to Kaaba.",
-                        style = typography.bodySecondary
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
                     )
-                    
-                    uiState.selectedLocation?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Selected: ${String.format("%.4f", it.latitude)}, ${String.format("%.4f", it.longitude)}",
-                            style = typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    
-                    // Qibla Information Display with Error Handling
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Show error indicator if there's a calculation error
-                    if (uiState.error != null && uiState.currentLocation != null) {
-                        Card(
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
-                            )
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Text(
+                                "Adjust Your Location",
+                                style = typography.titleTertiary,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            // Qibla Direction Toggle Button
+                            IconButton(
+                                onClick = { viewModel.toggleQiblaDirection() },
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = "Calculation Error",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = uiState.error!!,
-                                    style = typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.weight(1f)
+                                    imageVector = if (uiState.showQiblaDirection) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (uiState.showQiblaDirection) "Hide Qibla direction" else "Show Qibla direction",
+                                    tint = if (uiState.showQiblaDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-                    
-                    // Show Qibla information or fallback indicators
-                    if (uiState.qiblaBearing != 0.0 || uiState.distanceToKaaba != 0.0) {
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Drag the pin to your exact location. The green line shows the direction to Kaaba.",
+                            style = typography.bodySecondary
+                        )
+
+                        uiState.selectedLocation?.let {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Selected: ${String.format("%.4f", it.latitude)}, ${String.format("%.4f", it.longitude)}",
+                                style = typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (uiState.error != null && uiState.currentLocation != null) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Calculation Error",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = uiState.error!!,
+                                        style = typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        when {
+                            uiState.qiblaBearing != 0.0 || uiState.distanceToKaaba != 0.0 -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        "Qibla: ${String.format("%.1f", uiState.qiblaBearing)}°",
+                                        style = typography.labelSmall,
+                                        color = if (uiState.error != null) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        } else {
+                                            MaterialTheme.colorScheme.secondary
+                                        },
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        "Distance: ${String.format("%.0f", uiState.distanceToKaaba)} km",
+                                        style = typography.labelSmall,
+                                        color = if (uiState.error != null) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        } else {
+                                            MaterialTheme.colorScheme.secondary
+                                        },
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            uiState.selectedLocation != null && uiState.error == null -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        strokeWidth = 1.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "Calculating Qibla direction...",
+                                        style = typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                "Qibla: ${String.format("%.1f", uiState.qiblaBearing)}°",
+                                "Tiles: ${uiState.tileCount}",
                                 style = typography.labelSmall,
-                                color = if (uiState.error != null) 
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                else 
-                                    MaterialTheme.colorScheme.secondary,
-                                fontWeight = FontWeight.Medium
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                "Distance: ${String.format("%.0f", uiState.distanceToKaaba)} km",
-                                style = typography.labelSmall,
-                                color = if (uiState.error != null) 
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                else 
-                                    MaterialTheme.colorScheme.secondary,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    } else if (uiState.selectedLocation != null && uiState.error == null) {
-                        // Show calculating indicator when location is selected but no Qibla info yet
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
-                                strokeWidth = 1.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Calculating Qibla direction...",
+                                "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB / ${uiState.cacheLimitMb}MB",
                                 style = typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "Tiles: ${uiState.tileCount}",
-                            style = typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB / ${uiState.cacheLimitMb}MB",
-                            style = typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-
-    if (uiState.pendingMeasurementRequestToken != null && uiState.measurementSnapshot == null) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Preparing angle measurement…",
-                    style = typography.bodySecondary,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                }
             }
-        }
-    }
 
-    if (uiState.isMeasurementOverlayVisible && uiState.measurementSnapshot != null) {
-        AngleMeasurementOverlay(
-            snapshot = uiState.measurementSnapshot,
-            lastMeasuredAngle = uiState.lastMeasuredAngle,
-            onAngleMeasured = { angle -> viewModel.onAngleMeasured(angle) },
-            onClearMeasurement = { viewModel.clearMeasurementAngle() },
-            onDismiss = { viewModel.dismissMeasurementOverlay() }
-        )
-    }
-}
-        },
-                onHeightMeasured = { height -> viewModel.updatePanelHeight(height) }
-            )
-
-        // Bottom Action Bar
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                )
             ) {
                 Row(
                     modifier = Modifier
@@ -424,7 +398,6 @@ fun ManualLocationScreen(
                 }
             }
 
-            // Redraw Qibla Button (only shows when Qibla line is missing)
             if (uiState.showQiblaDirection && uiState.needsQiblaRedraw && !uiState.isLoading) {
                 FloatingActionButton(
                     onClick = { viewModel.redrawQiblaLine() },
@@ -458,6 +431,37 @@ fun ManualLocationScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
+                }
+            }
+
+            if (uiState.pendingMeasurementRequestToken != null && uiState.measurementSnapshot == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Preparing angle measurement…",
+                            style = typography.bodySecondary,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            if (uiState.isMeasurementOverlayVisible) {
+                uiState.measurementSnapshot?.let { snapshot ->
+                    AngleMeasurementOverlay(
+                        snapshot = snapshot,
+                        lastMeasuredAngle = uiState.lastMeasuredAngle,
+                        onAngleMeasured = { angle -> viewModel.onAngleMeasured(angle) },
+                        onClearMeasurement = { viewModel.clearMeasurementAngle() },
+                        onDismiss = { viewModel.dismissMeasurementOverlay() }
+                    )
                 }
             }
         }

@@ -3,13 +3,13 @@ package com.bizzkoot.qiblafinder.ui.compass
 import android.location.Location
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bizzkoot.qiblafinder.model.CalibrationRepository
 import com.bizzkoot.qiblafinder.model.CompassStatus
 import com.bizzkoot.qiblafinder.model.GeodesyUtils
 import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.LocationState
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.model.SensorRepository
-import com.bizzkoot.qiblafinder.sunCalibration.SunCalibrationViewModel
 import com.bizzkoot.qiblafinder.ui.location.MapLocation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +29,7 @@ data class CompassUiState(
 class CompassViewModel(
     private val locationRepository: LocationRepository,
     private val sensorRepository: SensorRepository,
-    private val sunCalibrationViewModel: SunCalibrationViewModel? = null
+    private val calibrationRepository: CalibrationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CompassUiState())
@@ -44,11 +44,8 @@ class CompassViewModel(
     val showCalibration: StateFlow<Boolean> = _showCalibration
 
     init {
-        // Apply any existing calibration offset
-        sunCalibrationViewModel?.let { vm ->
-            val offset = vm.getCurrentCalibrationOffset()
-            sensorRepository.setCalibrationOffset(offset)
-        }
+        // Apply any existing calibration offset immediately
+        sensorRepository.setCalibrationOffset(calibrationRepository.getCurrentOffset())
         
         // Location-derived data (bearing + distance) recomputes only when the location
         // changes — never on the high-frequency orientation stream.
@@ -83,7 +80,7 @@ class CompassViewModel(
                     orientationState = orientationState,
                     qiblaBearing = derived.qiblaBearing,
                     distanceToKaaba = derived.distanceToKaaba,
-                    isSunCalibrated = sunCalibrationViewModel?.calibrationResult?.value != null,
+                    isSunCalibrated = calibrationRepository.calibrationResult.value != null,
                     isManualLocation = derived.isManualLocation
                 )
             }.collect { state ->
@@ -91,13 +88,12 @@ class CompassViewModel(
             }
         }
         
-        // Observe calibration changes
-        sunCalibrationViewModel?.let { vm ->
-            viewModelScope.launch {
-                vm.calibrationResult.collect { result ->
-                    val offset = result?.errorOffset ?: 0.0
-                    sensorRepository.setCalibrationOffset(offset)
-                }
+        // Observe calibration changes: calibrating on the Sun Calibration screen
+        // applies the new offset to the compass immediately on return.
+        viewModelScope.launch {
+            calibrationRepository.calibrationResult.collect { result ->
+                val offset = result?.errorOffset ?: 0.0
+                sensorRepository.setCalibrationOffset(offset)
             }
         }
 

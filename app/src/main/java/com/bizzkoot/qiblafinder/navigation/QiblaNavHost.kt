@@ -12,6 +12,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.bizzkoot.qiblafinder.model.CalibrationRepository
 import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.SensorRepository
 import com.bizzkoot.qiblafinder.sunCalibration.SunCalibrationViewModel
@@ -43,7 +44,15 @@ fun QiblaNavHost(
     modifier: Modifier = Modifier
 ) {
     Timber.d("🎯 QiblaNavHost - Using shared repositories: LocationRepository=$sharedLocationRepository, SensorRepository=$sharedSensorRepository")
-    
+
+    // Single shared CalibrationRepository: one in-memory source of truth for the
+    // sun calibration offset, backed by the "sun_calibration" SharedPreferences.
+    // The SAME instance is passed to both the compass and the sun calibration
+    // routes so that calibrating on the sun screen emits into the flow the
+    // compass collects, applying the offset immediately on return.
+    val navContext = LocalContext.current
+    val calibrationRepository = remember { CalibrationRepository(navContext.applicationContext) }
+
     NavHost(
         navController = navController,
         startDestination = QiblaAppState.COMPASS_ROUTE,
@@ -51,18 +60,22 @@ fun QiblaNavHost(
     ) {
         composable(QiblaAppState.COMPASS_ROUTE) { backStackEntry ->
             Timber.d("🎯 QiblaNavHost - Compass screen composable called")
-            val context = LocalContext.current
 
             // Keep-screen-on: persisted toggle + lifecycle-safe window flag
-            val compassPreferences = remember { CompassPreferences(context.applicationContext) }
+            val compassPreferences = remember { CompassPreferences(navContext.applicationContext) }
             var keepScreenOn by remember { mutableStateOf(compassPreferences.getKeepScreenOn()) }
             KeepScreenOn(enabled = keepScreenOn)
             
             val viewModel: CompassViewModel = viewModel(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
                     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                         Timber.d("🎯 QiblaNavHost - Creating CompassViewModel with shared repositories")
-                        return CompassViewModel(sharedLocationRepository, sharedSensorRepository) as T
+                        return CompassViewModel(
+                            sharedLocationRepository,
+                            sharedSensorRepository,
+                            calibrationRepository
+                        ) as T
                     }
                 }
             )
@@ -80,29 +93,6 @@ fun QiblaNavHost(
                     backStackEntry.savedStateHandle.remove<Float>("manual_lng")
                 }
             }
-            
-            val sunPositionViewModel = viewModel<SunPositionViewModel>(
-                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                        @Suppress("UNCHECKED_CAST")
-                        return SunPositionViewModel(sharedLocationRepository) as T
-                    }
-                }
-            )
-
-            val sunCalibrationViewModel = viewModel<SunCalibrationViewModel>(
-                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                        @Suppress("UNCHECKED_CAST")
-                        return SunCalibrationViewModel(
-                            context,
-                            sharedLocationRepository,
-                            sharedSensorRepository,
-                            sunPositionViewModel
-                        ) as T
-                    }
-                }
-            )
 
             CompassScreen(
                 viewModel = viewModel,
@@ -129,7 +119,6 @@ fun QiblaNavHost(
 
         composable(QiblaAppState.SUN_CALIBRATION_ROUTE) {
             Timber.d("🎯 QiblaNavHost - Sun Calibration screen composable called")
-            val context = LocalContext.current
             
             val sunPositionViewModel = viewModel<SunPositionViewModel>(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
@@ -144,9 +133,9 @@ fun QiblaNavHost(
                     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                         @Suppress("UNCHECKED_CAST")
                         return SunCalibrationViewModel(
-                            context,
                             sharedLocationRepository,
                             sharedSensorRepository,
+                            calibrationRepository,
                             sunPositionViewModel
                         ) as T
                     }

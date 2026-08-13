@@ -1,9 +1,9 @@
 package com.bizzkoot.qiblafinder.sunCalibration
 
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bizzkoot.qiblafinder.model.CalibrationRepository
+import com.bizzkoot.qiblafinder.model.CalibrationResult
 import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.SensorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,21 +17,19 @@ import kotlinx.coroutines.launch
  * with the device's measured heading.
  */
 class SunCalibrationViewModel(
-    private val context: Context,
     private val locationRepository: LocationRepository,
     private val sensorRepository: SensorRepository,
+    private val calibrationRepository: CalibrationRepository,
     sunPositionViewModel: SunPositionViewModel
 ) : ViewModel() {
-    
-    private val sharedPreferences: SharedPreferences by lazy {
-        context.getSharedPreferences("sun_calibration", Context.MODE_PRIVATE)
-    }
     
     private val _uiState = MutableStateFlow<SunCalibrationUiState>(SunCalibrationUiState.Loading)
     val uiState: StateFlow<SunCalibrationUiState> = _uiState
     
-    private val _calibrationResult = MutableStateFlow<CalibrationResult?>(getStoredCalibrationResult())
-    val calibrationResult: StateFlow<CalibrationResult?> = _calibrationResult
+    // Single source of truth lives in CalibrationRepository (persisted + reactive).
+    // It is seeded from SharedPreferences at construction, so a previously stored
+    // calibration is reflected here immediately.
+    val calibrationResult: StateFlow<CalibrationResult?> = calibrationRepository.calibrationResult
     
     init {
         observeSunPosition(sunPositionViewModel)
@@ -99,15 +97,13 @@ class SunCalibrationViewModel(
                 while (error > 180) error -= 360
                 while (error < -180) error += 360
                 
-                // Create calibration result
+                // Create calibration result and store it via the repository
+                // (persists to SharedPreferences and publishes to calibrationResult)
                 val result = CalibrationResult(
                     errorOffset = error,
                     timestamp = System.currentTimeMillis()
                 )
-                
-                // Store the calibration result
-                storeCalibrationResult(result)
-                _calibrationResult.value = result
+                calibrationRepository.store(result)
                 _uiState.value = SunCalibrationUiState.Calibrated(result)
             } catch (e: Exception) {
                 _uiState.value = SunCalibrationUiState.Error("Calibration failed: ${e.message}")
@@ -119,56 +115,9 @@ class SunCalibrationViewModel(
      * Resets the calibration state
      */
     fun resetCalibration() {
-        clearStoredCalibrationResult()
-        _calibrationResult.value = null
+        calibrationRepository.clear()
         // Re-observe sun position to update UI state
         // This will be handled by the ongoing collection in init
-    }
-    
-    /**
-     * Gets the current calibration offset that should be applied to compass readings
-     */
-    fun getCurrentCalibrationOffset(): Double {
-        return _calibrationResult.value?.errorOffset ?: 0.0
-    }
-    
-    /**
-     * Stores the calibration result in SharedPreferences
-     */
-    private fun storeCalibrationResult(result: CalibrationResult) {
-        with(sharedPreferences.edit()) {
-            putFloat("calibration_offset", result.errorOffset.toFloat())
-            putLong("calibration_timestamp", result.timestamp)
-            apply()
-        }
-    }
-    
-    /**
-     * Retrieves the stored calibration result from SharedPreferences
-     */
-    private fun getStoredCalibrationResult(): CalibrationResult? {
-        val offset = sharedPreferences.getFloat("calibration_offset", 0f)
-        val timestamp = sharedPreferences.getLong("calibration_timestamp", 0L)
-        
-        return if (timestamp > 0) {
-            CalibrationResult(
-                errorOffset = offset.toDouble(),
-                timestamp = timestamp
-            )
-        } else {
-            null
-        }
-    }
-    
-    /**
-     * Clears the stored calibration result
-     */
-    private fun clearStoredCalibrationResult() {
-        with(sharedPreferences.edit()) {
-            remove("calibration_offset")
-            remove("calibration_timestamp")
-            apply()
-        }
     }
 }
 
@@ -200,11 +149,3 @@ sealed interface SunCalibrationUiState {
      */
     data class Error(val message: String) : SunCalibrationUiState
 }
-
-/**
- * Data class representing the result of a calibration.
- */
-data class CalibrationResult(
-    val errorOffset: Double,
-    val timestamp: Long
-)

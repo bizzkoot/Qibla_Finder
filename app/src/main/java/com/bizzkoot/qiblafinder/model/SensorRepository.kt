@@ -41,7 +41,14 @@ data class CompassFilterConfig(
     val minAlpha: Float = 0.05f,
     val maxAlpha: Float = 0.6f,
     val defaultDeltaSeconds: Float = 0.02f
-)
+) {
+    /**
+     * Sampling period in microseconds for [targetSamplingRateHz], clamped to a 5 ms floor.
+     * Extracted from SensorRepository.getOrientationFlow so the H3 throttle value is testable.
+     */
+    fun samplingPeriodUs(): Int =
+        (1_000_000f / targetSamplingRateHz).toInt().coerceAtLeast(5_000)
+}
 
 data class CalibrationPromptConfig(
     val accuracyDebounceMs: Long = 1_000L,
@@ -436,7 +443,7 @@ class SensorRepository @Inject constructor(
         val sensorThread = HandlerThread("CompassSensors").also { it.start() }
         val sensorHandler = Handler(sensorThread.looper)
 
-        val targetSamplingPeriodUs = (1_000_000f / filterConfig.targetSamplingRateHz).toInt().coerceAtLeast(5_000)
+        val targetSamplingPeriodUs = filterConfig.samplingPeriodUs()
         val fallbackSamplingPeriodUs = (1_000_000f / filterConfig.minSamplingRateHz).toInt().coerceAtLeast(targetSamplingPeriodUs)
 
         var samplingPeriodUs = targetSamplingPeriodUs

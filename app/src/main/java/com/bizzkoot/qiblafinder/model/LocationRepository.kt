@@ -37,9 +37,23 @@ enum class LocationAccuracy {
 }
 
 class LocationRepository(private val context: Context) {
-    
-    private val fusedLocationClient: FusedLocationProviderClient by lazy {
+
+    // Test seam: when set, overrides the lazily-created default client so tests can
+    // inject a fake/mock FusedLocationProviderClient. The primary path never sets it.
+    private var fusedLocationClientOverride: FusedLocationProviderClient? = null
+
+    private val defaultFusedLocationClient: FusedLocationProviderClient by lazy {
         LocationServices.getFusedLocationProviderClient(context)
+    }
+
+    private val fusedLocationClient: FusedLocationProviderClient
+        get() = fusedLocationClientOverride ?: defaultFusedLocationClient
+
+    internal constructor(
+        context: Context,
+        fusedLocationClient: FusedLocationProviderClient
+    ) : this(context) {
+        fusedLocationClientOverride = fusedLocationClient
     }
     
     private val _locationState = MutableStateFlow<LocationState>(LocationState.Loading)

@@ -152,6 +152,13 @@ fun QiblaNavHost(
         composable(QiblaAppState.AR_VIEW_ROUTE) {
             Timber.d("🎯 QiblaNavHost - AR screen composable called")
             val context = LocalContext.current
+
+            // Keep the AR screen awake too: reuse the SAME persisted "keep_screen_on"
+            // preference as the compass route, so the in-compass toggle controls both
+            // routes. No toggle UI is needed here — KeepScreenOn just honors the value.
+            val compassPreferences = remember { CompassPreferences(context.applicationContext) }
+            KeepScreenOn(enabled = remember { compassPreferences.getKeepScreenOn() })
+
             val arViewModel: ARViewModel = viewModel(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
                     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {

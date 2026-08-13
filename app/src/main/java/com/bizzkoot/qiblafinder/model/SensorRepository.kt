@@ -1,6 +1,7 @@
 package com.bizzkoot.qiblafinder.model
 
 import android.content.Context
+import android.hardware.GeomagneticField
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -11,13 +12,15 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Surface
 import android.view.WindowManager
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import android.hardware.GeomagneticField
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.pow
@@ -49,6 +52,31 @@ data class CompassFilterConfig(
     fun samplingPeriodUs(): Int =
         (1_000_000f / targetSamplingRateHz).toInt().coerceAtLeast(5_000)
 }
+
+/**
+ * Tilt angle (degrees from flat) derived from the accelerometer reading.
+ * 0° = perfectly flat (screen facing up), 90° = upright/vertical, 180° = face down.
+ *
+ * Extracted from SensorRepository.checkPhoneOrientation so the tilt math is
+ * unit-testable in isolation (Robolectric cannot deliver real sensor events).
+ */
+internal fun tiltAngleFromAccelerometer(x: Float, y: Float, z: Float): Float =
+    Math.toDegrees(
+        kotlin.math.atan2(
+            kotlin.math.sqrt((x * x + y * y).toDouble()), z.toDouble()
+        )
+    ).toFloat()
+
+/**
+ * The phone counts as "upright / NOT flat" when its tilt from flat falls in this
+ * band (65..115°). This is the alert band used by checkPhoneOrientation and by the
+ * compass/AR "lay the phone flat" warnings, so the UI threshold and the detector
+ * can never drift apart. NOTE: the legacy [OrientationState.Available.isPhoneFlat]
+ * field is named INVERTED relative to this: `isPhoneFlat == true` actually means
+ * the phone is UPRIGHT (tilt inside this band).
+ */
+const val NOT_FLAT_TILT_MIN_DEGREES = 65f
+const val NOT_FLAT_TILT_MAX_DEGREES = 115f
 
 data class CalibrationPromptConfig(
     val accuracyDebounceMs: Long = 1_000L,
@@ -184,6 +212,18 @@ class SensorRepository @Inject constructor(
 ) {
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
+    // H4 lifecycle gating cancels and re-creates the sensor collection whenever the
+    // compass leaves/returns to RESUMED, and the AR screen runs its own independent
+    // collection of getOrientationFlow(). Both collections share this repository's
+    // mutable sensor state (adaptive filter, Kalman fusion, sample buffers, tilt
+    // flags, timestamps), so ownership is serialized through a Mutex: exactly one
+    // collection may hold the sensor listeners at a time. Concurrent listeners
+    // previously clobbered each other's shared filter/fusion state during
+    // compass<->AR transitions, which is the suspected cause of the flat-phone
+    // alert regression. Collections that start while another is active simply wait
+    // (suspended in callbackFlow) for the current owner to release.
+    private val collectionMutex = Mutex()
+
     private val rotationMatrix = FloatArray(9)
     private val adjustedRotationMatrix = FloatArray(9)
     private val inclinationMatrix = FloatArray(9)
@@ -215,6 +255,17 @@ class SensorRepository @Inject constructor(
     val orientationState: Flow<OrientationState> = _orientationState.asStateFlow()
 
     fun getOrientationFlow(): Flow<OrientationState> = callbackFlow {
+        // Only one collection may own the shared sensor state at a time (see
+        // collectionMutex). Acquire it for the whole lifetime of this collection;
+        // awaitClose inside collectSensorReadings keeps the channel open until
+        // cancellation, at which point withLock releases the mutex to the next
+        // waiting collection (compass <-> AR handoff).
+        collectionMutex.withLock {
+            collectSensorReadings()
+        }
+    }
+
+    private suspend fun ProducerScope<OrientationState>.collectSensorReadings() {
         Timber.d("🔧 Starting compass sensor initialization...")
 
         adaptiveFilter.reset()
@@ -438,7 +489,7 @@ class SensorRepository @Inject constructor(
             Timber.e("❌ Rotation Vector Sensor not available.")
             trySend(OrientationState.Initializing)
             awaitClose()
-            return@callbackFlow
+            return
         }
         val sensorThread = HandlerThread("CompassSensors").also { it.start() }
         val sensorHandler = Handler(sensorThread.looper)
@@ -469,7 +520,7 @@ class SensorRepository @Inject constructor(
                     sensorThread.quitSafely()
                     locationJob.cancel()
                     close(IllegalStateException("Rotation vector sensor registration failed"))
-                    return@callbackFlow
+                    return
                 }
             }
         }
@@ -643,20 +694,22 @@ class SensorRepository @Inject constructor(
         val x = accelerometerReading[0]
         val y = accelerometerReading[1]
         val z = accelerometerReading[2]
-        
-        // Calculate tilt angle (deviation from vertical)
-        val tiltAngle = Math.toDegrees(kotlin.math.atan2(
-            kotlin.math.sqrt((x * x + y * y).toDouble()), z.toDouble()
-        )).toFloat()
-        
+
+        // Calculate tilt angle (deviation from horizontal/flat)
+        val tiltAngle = tiltAngleFromAccelerometer(x, y, z)
+
         phoneTiltAngle = tiltAngle
-        
-        // Phone is considered flat if tilt is within 25 degrees of horizontal (more forgiving)
+
         // Vertical is when tilt is close to 0° or 180° (within 10 degrees - more strict)
         val wasFlat = isPhoneFlat
         val wasVertical = isPhoneVertical
-        
-        isPhoneFlat = tiltAngle >= 65f && tiltAngle <= 115f
+
+        // NOTE: the field is named isPhoneFlat but its semantics are INVERTED:
+        // isPhoneFlat == true when the tilt is in the 65..115° band, i.e. the phone
+        // is UPRIGHT / NOT flat. The UI "lay the phone flat" alerts rely on this
+        // (alert when isPhoneFlat == true). The band is shared with the UI via
+        // NOT_FLAT_TILT_MIN/MAX_DEGREES so the alerts can use phoneTiltAngle directly.
+        isPhoneFlat = tiltAngle >= NOT_FLAT_TILT_MIN_DEGREES && tiltAngle <= NOT_FLAT_TILT_MAX_DEGREES
         isPhoneVertical = (tiltAngle <= 10f) || (tiltAngle >= 170f)
         
         if (wasFlat != isPhoneFlat || wasVertical != isPhoneVertical) {
@@ -686,7 +739,15 @@ class SensorRepository @Inject constructor(
 
     private fun getDisplayRotation(): Int {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            context.display?.rotation ?: Surface.ROTATION_0
+            // Context.getDisplay() throws UnsupportedOperationException for non-visual
+            // contexts (Application, service, Robolectric unit tests). Falling back to
+            // ROTATION_0 keeps the sensor pipeline alive; the app constructs the
+            // repository with the Activity context, where this resolves normally.
+            try {
+                context.display?.rotation ?: Surface.ROTATION_0
+            } catch (e: UnsupportedOperationException) {
+                Surface.ROTATION_0
+            }
         } else {
             val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             @Suppress("DEPRECATION")

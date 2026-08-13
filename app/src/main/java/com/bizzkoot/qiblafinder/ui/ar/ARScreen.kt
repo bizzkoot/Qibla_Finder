@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MAX_DEGREES
+import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MIN_DEGREES
 import com.bizzkoot.qiblafinder.ui.ar.ARErrorScreen
 import com.bizzkoot.qiblafinder.ui.ar.ARErrorType
 import com.google.ar.sceneform.ArSceneView
@@ -288,6 +290,40 @@ fun QiblaDirectionOverlay(
             }
         }
         
+        // "Phone not flat" warning: the AR compass reading is only accurate with the
+        // phone lying flat. Uses the same 65..115° tilt band as the compass red alert
+        // (NOT_FLAT_TILT_MIN/MAX_DEGREES, shared from SensorRepository). The legacy
+        // isPhoneFlat param is the INVERTED equivalent of this band (true == upright);
+        // the explicit tilt check keeps the UI self-documenting.
+        if (phoneTiltAngle >= NOT_FLAT_TILT_MIN_DEGREES && phoneTiltAngle <= NOT_FLAT_TILT_MAX_DEGREES) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, top = 96.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFB3261E)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Phone not flat warning",
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Phone not flat — lay the phone flat for accurate reading (tilt ${phoneTiltAngle.toInt()}°)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
         // Center Direction Indicator
         Box(
             modifier = Modifier.align(Alignment.Center)

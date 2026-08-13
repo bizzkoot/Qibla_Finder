@@ -49,6 +49,8 @@ import com.bizzkoot.qiblafinder.model.CompassStatus
 import timber.log.Timber
 import com.bizzkoot.qiblafinder.model.LocationAccuracy
 import com.bizzkoot.qiblafinder.model.LocationState
+import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MAX_DEGREES
+import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MIN_DEGREES
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.ui.calibration.CalibrationOverlay
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
@@ -152,10 +154,15 @@ fun CompassScreen(
                     isAligned = isAligned
                 )
                 
-                // Show red alert when phone IS flat (reversed logic due to axis setup)
+                // Show red alert when the phone is NOT flat (held upright/vertical).
+                // Driven directly from phoneTiltAngle using the shared 65..115° band
+                // (NOT_FLAT_TILT_MIN/MAX_DEGREES in SensorRepository) instead of the
+                // legacy isPhoneFlat field, whose name is confusingly INVERTED
+                // (isPhoneFlat == true actually means UPRIGHT). Both detect the same
+                // condition; the tilt band is self-documenting and cannot drift.
                 when (val oState = orientationState) {
                     is OrientationState.Available -> {
-                        if (oState.isPhoneFlat) {
+                        if (isPhoneUpright(oState.phoneTiltAngle)) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
@@ -349,6 +356,14 @@ private fun angleDiff(a: Float, b: Float): Float {
     val d = ((a - b + 540f) % 360f) - 180f
     return kotlin.math.abs(d)
 }
+
+/**
+ * True when the tilt angle (degrees from flat) puts the phone in the "upright /
+ * NOT flat" band (65..115°). Mirrors SensorRepository.checkPhoneOrientation so the
+ * red alert and the detector agree; see NOT_FLAT_TILT_MIN/MAX_DEGREES.
+ */
+private fun isPhoneUpright(tiltAngle: Float): Boolean =
+    tiltAngle >= NOT_FLAT_TILT_MIN_DEGREES && tiltAngle <= NOT_FLAT_TILT_MAX_DEGREES
 
 @Composable
 fun StatusBar(

@@ -50,40 +50,43 @@ class CompassViewModel(
             sensorRepository.setCalibrationOffset(offset)
         }
         
+        // Location-derived data (bearing + distance) recomputes only when the location
+        // changes — never on the high-frequency orientation stream.
+        val locationDerived = combine(
+            locationRepository.getLocation(),
+            manualLocationOverride
+        ) { locationState, manualLocation ->
+            val activeLocationState = if (manualLocation != null) {
+                LocationState.Available(
+                    location = manualLocation,
+                    accuracy = 0f, // Manual location is precise
+                    accuracyLevel = com.bizzkoot.qiblafinder.model.LocationAccuracy.HIGH_ACCURACY
+                )
+            } else {
+                locationState
+            }
+            LocationDerivedState(
+                locationState = activeLocationState,
+                qiblaBearing = calculateQiblaBearing(activeLocationState),
+                distanceToKaaba = calculateDistanceToKaaba(activeLocationState),
+                isManualLocation = manualLocation != null
+            )
+        }
+
         viewModelScope.launch {
             combine(
-                locationRepository.getLocation(),
-                sensorRepository.getOrientationFlow(),
-                manualLocationOverride
-            ) { locationState, orientationState, manualLocation ->
-                Timber.d("🎯 CompassViewModel - Location: $locationState, Orientation: $orientationState, Manual: $manualLocation")
-
-                val activeLocationState = if (manualLocation != null) {
-                    LocationState.Available(
-                        location = manualLocation,
-                        accuracy = 0f, // Manual location is precise
-                        accuracyLevel = com.bizzkoot.qiblafinder.model.LocationAccuracy.HIGH_ACCURACY
-                    )
-                } else {
-                    locationState
-                }
-                
-                val qiblaBearing = calculateQiblaBearing(activeLocationState)
-                val distanceToKaaba = calculateDistanceToKaaba(activeLocationState)
-                val isSunCalibrated = sunCalibrationViewModel?.calibrationResult?.value != null
-                
-                Timber.d("🧭 CompassViewModel - Qibla bearing: $qiblaBearing°, Distance: $distanceToKaaba, Sun calibrated: $isSunCalibrated")
-                
+                locationDerived,
+                sensorRepository.getOrientationFlow()
+            ) { derived, orientationState ->
                 CompassUiState(
-                    locationState = activeLocationState,
+                    locationState = derived.locationState,
                     orientationState = orientationState,
-                    qiblaBearing = qiblaBearing,
-                    distanceToKaaba = distanceToKaaba,
-                    isSunCalibrated = isSunCalibrated,
-                    isManualLocation = manualLocation != null
+                    qiblaBearing = derived.qiblaBearing,
+                    distanceToKaaba = derived.distanceToKaaba,
+                    isSunCalibrated = sunCalibrationViewModel?.calibrationResult?.value != null,
+                    isManualLocation = derived.isManualLocation
                 )
             }.collect { state ->
-                Timber.d("📱 CompassViewModel - UI State updated: ${state.orientationState}")
                 _uiState.value = state
             }
         }
@@ -142,14 +145,10 @@ class CompassViewModel(
     private fun calculateDistanceToKaaba(locationState: LocationState): String {
         return when (locationState) {
             is LocationState.Available -> {
-                // Calculate actual distance to Kaaba
-                val kaabaLat = 21.4225
-                val kaabaLng = 39.8262
-                val distance = GeodesyUtils.calculateDistance(
+                // Single source of truth: Kaaba coordinates live in GeodesyUtils
+                val distance = GeodesyUtils.calculateDistanceToKaaba(
                     locationState.location.latitude,
-                    locationState.location.longitude,
-                    kaabaLat,
-                    kaabaLng
+                    locationState.location.longitude
                 )
                 "${distance.toInt()} km"
             }
@@ -166,4 +165,19 @@ class CompassViewModel(
         isManualCalibrationInProgress.value = false
         sensorRepository.onCalibrationDismissed()
     }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Stop GPS updates when the compass (the primary screen) is destroyed.
+        // LocationRepository guards against duplicate registration, so the shared
+        // repo stays consistent even if other screens are still alive.
+        locationRepository.stopLocationUpdates()
+    }
 }
+
+private data class LocationDerivedState(
+    val locationState: LocationState,
+    val qiblaBearing: Float?,
+    val distanceToKaaba: String,
+    val isManualLocation: Boolean
+)

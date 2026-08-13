@@ -1,5 +1,9 @@
 package com.bizzkoot.qiblafinder.ui.sunCalibration
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -46,14 +50,67 @@ fun SunCalibrationScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalContext.current as? LifecycleOwner
+
+    // Camera is optional app-wide (the compass works without it) — request it lazily here.
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+    }
     
     Box(modifier = Modifier.fillMaxSize()) {
         // Camera preview background
         if (uiState is SunCalibrationUiState.Ready && uiState.isSunVisible) {
-            CameraPreview(
-                modifier = Modifier.fillMaxSize(),
-                lifecycleOwner = lifecycleOwner
-            )
+            if (hasCameraPermission) {
+                CameraPreview(
+                    modifier = Modifier.fillMaxSize(),
+                    lifecycleOwner = lifecycleOwner
+                )
+            } else {
+                // No camera permission: show a prompt instead of a silently black preview
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        ),
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Camera permission needed",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Sun calibration overlays the sun position on the camera view. You can still use the compass without it.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
+                            ) {
+                                Text("Grant Camera Permission")
+                            }
+                        }
+                    }
+                }
+            }
         } else {
             // Fallback background
             Box(

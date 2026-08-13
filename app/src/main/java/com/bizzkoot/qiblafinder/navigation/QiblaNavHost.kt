@@ -2,7 +2,10 @@ package com.bizzkoot.qiblafinder.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -15,6 +18,8 @@ import com.bizzkoot.qiblafinder.sunCalibration.SunCalibrationViewModel
 import com.bizzkoot.qiblafinder.sunCalibration.SunPositionViewModel
 import com.bizzkoot.qiblafinder.ui.compass.CompassScreen
 import com.bizzkoot.qiblafinder.ui.compass.CompassViewModel
+import com.bizzkoot.qiblafinder.ui.compass.CompassPreferences
+import com.bizzkoot.qiblafinder.ui.compass.KeepScreenOn
 import androidx.compose.runtime.collectAsState
 import com.bizzkoot.qiblafinder.ui.location.MapLocation
 import com.bizzkoot.qiblafinder.ui.sunCalibration.SunCalibrationScreen
@@ -47,6 +52,11 @@ fun QiblaNavHost(
         composable(QiblaAppState.COMPASS_ROUTE) { backStackEntry ->
             Timber.d("🎯 QiblaNavHost - Compass screen composable called")
             val context = LocalContext.current
+
+            // Keep-screen-on: persisted toggle + lifecycle-safe window flag
+            val compassPreferences = remember { CompassPreferences(context.applicationContext) }
+            var keepScreenOn by remember { mutableStateOf(compassPreferences.getKeepScreenOn()) }
+            KeepScreenOn(enabled = keepScreenOn)
             
             val viewModel: CompassViewModel = viewModel(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
@@ -108,7 +118,12 @@ fun QiblaNavHost(
                         Timber.e("🎯 QiblaNavHost - Navigating to Manual Location - ERROR: ${e.message}")
                     }
                 },
-                onNavigateToTroubleshooting = { navController.navigate(QiblaAppState.TROUBLESHOOTING_ROUTE) }
+                onNavigateToTroubleshooting = { navController.navigate(QiblaAppState.TROUBLESHOOTING_ROUTE) },
+                keepScreenOn = keepScreenOn,
+                onToggleKeepScreenOn = {
+                    keepScreenOn = !keepScreenOn
+                    compassPreferences.setKeepScreenOn(keepScreenOn)
+                }
             )
         }
 
@@ -165,7 +180,8 @@ fun QiblaNavHost(
             )
             ARScreen(
                 viewModel = arViewModel,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onCalibrateClicked = { navController.navigate(QiblaAppState.SUN_CALIBRATION_ROUTE) }
             )
         }
 

@@ -59,16 +59,19 @@ class PermissionManager(private val context: Context) {
         )
     }
     
+    /**
+     * Location is the only permission required to use the compass (the core product).
+     * Camera is requested lazily by the AR and Sun Calibration screens themselves.
+     */
     fun hasRequiredPermissions(): Boolean {
         val state = _permissionState.value
-        return state.locationGranted && state.cameraGranted
+        return state.locationGranted
     }
     
     fun getRequiredPermissions(): Array<String> {
         return arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.CAMERA
+            Manifest.permission.ACCESS_COARSE_LOCATION
         )
     }
 } 

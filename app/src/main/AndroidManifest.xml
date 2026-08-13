@@ -14,9 +14,6 @@
     <!-- For installing APK files -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     
-    <!-- For monitoring download completion -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    
     <!-- ARCore features -->
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

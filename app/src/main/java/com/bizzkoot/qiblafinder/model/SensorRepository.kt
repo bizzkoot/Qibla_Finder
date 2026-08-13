@@ -25,7 +25,10 @@ import kotlin.math.sqrt
 import timber.log.Timber
 
 data class CompassFilterConfig(
-    val targetSamplingRateHz: Int = 50,
+    // 30 Hz balances responsiveness with battery: the Kalman + adaptive filter smooths
+    // the heading and the UI cannot display beyond screen refresh anyway. Halves the
+    // ~100+ StateFlow emissions/sec the previous 50 Hz rate produced.
+    val targetSamplingRateHz: Int = 30,
     val minSamplingRateHz: Int = 20,
     val accelLowPassAlpha: Float = 0.85f,
     val motionNoiseFloor: Float = 0.015f,

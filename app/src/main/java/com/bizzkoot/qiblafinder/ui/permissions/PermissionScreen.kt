@@ -56,7 +56,7 @@ fun PermissionScreen(
         Spacer(modifier = Modifier.height(32.dp))
         
         Text(
-            text = "This app needs the following permissions to work properly:",
+            text = "Location permission is required for the compass. Camera is optional — only needed for AR view and sun calibration:",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
         )
@@ -75,9 +75,10 @@ fun PermissionScreen(
         
         PermissionStatusCard(
             title = "Camera Permission", 
-            description = "Required for AR features and sun calibration",
+            description = "Optional — only needed for AR view and sun calibration",
             isGranted = permissionState.cameraGranted,
-            accuracy = null
+            accuracy = null,
+            deniedLabel = "✗ Optional"
         )
         
         Spacer(modifier = Modifier.height(32.dp))
@@ -91,7 +92,7 @@ fun PermissionScreen(
             Text("Grant Permissions")
         }
         
-        if (!permissionState.locationGranted || !permissionState.cameraGranted) {
+        if (!permissionState.locationGranted) {
             Spacer(modifier = Modifier.height(16.dp))
             
             Text(
@@ -110,7 +111,8 @@ private fun PermissionStatusCard(
     title: String,
     description: String,
     isGranted: Boolean,
-                accuracy: com.bizzkoot.qiblafinder.permissions.LocationAccuracy?
+                accuracy: com.bizzkoot.qiblafinder.permissions.LocationAccuracy?,
+                deniedLabel: String = "✗ Required"
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -135,7 +137,7 @@ private fun PermissionStatusCard(
                 Spacer(modifier = Modifier.weight(1f))
                 
                 Text(
-                    text = if (isGranted) "✓ Granted" else "✗ Required",
+                    text = if (isGranted) "✓ Granted" else deniedLabel,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isGranted) 
                         MaterialTheme.colorScheme.primary 

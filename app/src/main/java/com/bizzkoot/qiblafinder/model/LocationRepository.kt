@@ -70,6 +70,12 @@ class LocationRepository(private val context: Context) {
 
     private fun startLocationUpdates() {
         // This function is extracted from getLocation to be reusable
+        if (locationCallback != null) {
+            // Already running — avoid registering duplicate LocationCallbacks.
+            // (Multiple subscribers previously created one callback each; only the
+            // last was retained, leaking the earlier registrations.)
+            return
+        }
         if (!hasLocationPermission()) {
             _locationState.value = LocationState.PermissionDenied
             return

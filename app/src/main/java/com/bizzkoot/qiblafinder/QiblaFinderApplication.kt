@@ -1,7 +1,9 @@
 package com.bizzkoot.qiblafinder
 
 import android.app.Application
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.bizzkoot.qiblafinder.update.api.GitHubApiClient
@@ -38,6 +40,11 @@ class QiblaFinderApplication : Application() {
     private fun scheduleUpdateChecks() {
         val updateCheckRequest = PeriodicWorkRequestBuilder<UpdateCheckWorker>(
             1, TimeUnit.DAYS
+        ).setConstraints(
+            // Don't wake the radio on metered/unavailable networks
+            Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
         ).build()
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(

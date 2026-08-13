@@ -26,10 +26,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -57,7 +60,9 @@ fun CompassScreen(
     onNavigateToSunCalibration: (() -> Unit)? = null,
     onNavigateToAR: (() -> Unit)? = null,
     onNavigateToManualLocation: (() -> Unit)? = null,
-    onNavigateToTroubleshooting: (() -> Unit)? = null
+    onNavigateToTroubleshooting: (() -> Unit)? = null,
+    keepScreenOn: Boolean = false,
+    onToggleKeepScreenOn: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val locationState = uiState.locationState
@@ -93,7 +98,9 @@ fun CompassScreen(
                 locationState = locationState,
                 orientationState = orientationState,
                 isSunCalibrated = isSunCalibrated,
-                isManualLocation = isManualLocation
+                isManualLocation = isManualLocation,
+                keepScreenOn = keepScreenOn,
+                onToggleKeepScreenOn = onToggleKeepScreenOn
             )
 
             // Compass graphic
@@ -324,7 +331,9 @@ fun StatusBar(
     locationState: LocationState,
     orientationState: OrientationState,
     isSunCalibrated: Boolean = false,
-    isManualLocation: Boolean = false
+    isManualLocation: Boolean = false,
+    keepScreenOn: Boolean = false,
+    onToggleKeepScreenOn: (() -> Unit)? = null
 ) {
     val typography = QiblaTypography.current
     Row(
@@ -365,6 +374,24 @@ fun StatusBar(
             }
         }
         Text(text = compassText, style = typography.bodySecondary)
+
+        // Keep-screen-on toggle (screen stays awake while the compass is open)
+        if (onToggleKeepScreenOn != null) {
+            IconButton(
+                onClick = onToggleKeepScreenOn,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = if (keepScreenOn) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                    contentDescription = if (keepScreenOn) "Keep screen on" else "Screen timeout active",
+                    tint = if (keepScreenOn) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -595,8 +622,10 @@ fun CompassGraphic(
             
             // Draw Kaaba logo outside compass circle when aligned (2x larger)
             if (isAligned) {
-                val kaabaY = centerY - radius * 1.3f // Further outside the circle
                 val kaabaRadius = 50f // 2x larger than before (25f * 2)
+                // Clamp so the marker is never clipped off-canvas: the previous
+                // centerY - radius*1.3f put it above the top edge at every density.
+                val kaabaY = (centerY - radius * 1.3f).coerceAtLeast(kaabaRadius)
                 
                 // Draw background circle
                 drawCircle(

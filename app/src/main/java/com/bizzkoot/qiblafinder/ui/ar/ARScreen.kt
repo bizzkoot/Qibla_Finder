@@ -41,7 +41,8 @@ import timber.log.Timber
 @Composable
 fun ARScreen(
     viewModel: ARViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onCalibrateClicked: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val arCoreAvailability by viewModel.arCoreAvailability.collectAsState()
@@ -89,7 +90,7 @@ fun ARScreen(
                     errorType = errorType,
                     onRetry = { viewModel.createSession() },
                     onNavigateBack = onNavigateBack,
-                    onCalibrateClicked = { /* Navigate to sun calibration */ }
+                    onCalibrateClicked = onCalibrateClicked
                 )
             }
             else -> {

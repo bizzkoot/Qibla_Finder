@@ -28,12 +28,13 @@ class UpdateNotificationRepository(
         }
 
         val updateInfo = versionChecker.checkForUpdates()
-        
+
         if (updateInfo != null) {
             _updateInfo.value = updateInfo
-            // Save the last check time
-            prefs.edit().putLong("last_check_time", System.currentTimeMillis()).apply()
         }
+        // Save the last check time unconditionally so the 24h rate limit engages even
+        // when no update is available (previously it never did → API hit every launch).
+        prefs.edit().putLong("last_check_time", System.currentTimeMillis()).apply()
 
         return updateInfo
     }

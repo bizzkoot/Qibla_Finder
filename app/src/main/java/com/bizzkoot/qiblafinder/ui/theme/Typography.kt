@@ -1,7 +1,10 @@
 package com.bizzkoot.qiblafinder.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
@@ -194,8 +197,9 @@ private fun scaleTextUnit(value: TextUnit, factor: Float): TextUnit? {
 fun QiblaFinderTheme(content: @Composable () -> Unit) {
     QiblaTypographyProvider {
         val typography = QiblaTypography.current.toMaterialTypography()
+        val darkTheme = isSystemInDarkTheme()
         MaterialTheme(
-            colorScheme = MaterialTheme.colorScheme,
+            colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme(),
             typography = typography,
             content = content
         )

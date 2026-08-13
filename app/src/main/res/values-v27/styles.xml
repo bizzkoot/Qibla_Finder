@@ -5,6 +5,8 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Support display cutouts (attribute available only since API 27) -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <!-- Samsung/One UI specific configurations -->
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>

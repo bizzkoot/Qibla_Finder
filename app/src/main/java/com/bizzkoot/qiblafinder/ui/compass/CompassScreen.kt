@@ -425,6 +425,9 @@ fun CompassGraphic(
     qiblaBearing: Float?,
     isAligned: Boolean
 ) {
+    // Theme-aware canvas text color: adapts to light/dark (MaterialTheme colorScheme)
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
     var targetRotation by remember { mutableStateOf(0f) }
     var lastDelta by remember { mutableStateOf(0f) }
     val lastLogElapsed = remember { mutableStateOf(0L) }
@@ -504,7 +507,7 @@ fun CompassGraphic(
                     textY,
                     android.graphics.Paint().apply {
                         textSize = 32f
-                        color = Color.Black.hashCode()
+                        color = onSurfaceColor.hashCode()
                         textAlign = android.graphics.Paint.Align.CENTER
                     }
                 )

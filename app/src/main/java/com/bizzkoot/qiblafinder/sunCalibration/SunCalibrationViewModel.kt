@@ -8,8 +8,10 @@ import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.SensorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /**
  * ViewModel for the Sun Calibration feature.
@@ -80,20 +82,32 @@ class SunCalibrationViewModel(
                     return@launch
                 }
                 
-                // Get the current device heading
-                val orientationState = sensorRepository.orientationState.first()
-                if (orientationState !is com.bizzkoot.qiblafinder.model.OrientationState.Available) {
-                    _uiState.value = SunCalibrationUiState.Error("Device orientation not available")
-                    return@launch
+                // Get a LIVE device heading. The compass gates its own sensor
+                // collection off as soon as this route covers it, so the shared
+                // orientationState StateFlow would be frozen at the pre-navigation
+                // reading (C1); collect a fresh orientation flow instead. The timeout
+                // bounds the wait for the sensor collection mutex (SensorRepository)
+                // in case a stale holder is still releasing it.
+                val measuredHeading = withTimeout(5_000L) {
+                    sensorRepository.getOrientationFlow()
+                        .filterIsInstance<com.bizzkoot.qiblafinder.model.OrientationState.Available>()
+                        .first()
+                        .trueHeading.toDouble()
                 }
-                
-                val measuredHeading = orientationState.trueHeading.toDouble()
                 val sunAzimuth = sunState.sunAzimuth
                 
+                // The emitted heading already has the current calibration offset baked
+                // in (SensorRepository applies it to every reading). Computing the
+                // error against that calibrated heading would double-apply the previous
+                // offset on a re-calibration, so correct it back to the un-offset
+                // heading first (C2).
+                val currentOffset = calibrationRepository.getCurrentOffset()
+                val unOffsetHeading = (measuredHeading - currentOffset + 360.0) % 360.0
+                
                 // Calculate the error offset
-                // Error = True Sun Azimuth - Measured Heading
+                // Error = True Sun Azimuth - Un-offset Measured Heading
                 // We need to normalize the result to be between -180 and 180 degrees
-                var error = sunAzimuth - measuredHeading
+                var error = sunAzimuth - unOffsetHeading
                 while (error > 180) error -= 360
                 while (error < -180) error += 360
                 
@@ -109,15 +123,6 @@ class SunCalibrationViewModel(
                 _uiState.value = SunCalibrationUiState.Error("Calibration failed: ${e.message}")
             }
         }
-    }
-    
-    /**
-     * Resets the calibration state
-     */
-    fun resetCalibration() {
-        calibrationRepository.clear()
-        // Re-observe sun position to update UI state
-        // This will be handled by the ongoing collection in init
     }
 }
 

@@ -14,6 +14,7 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import timber.log.Timber
@@ -60,12 +61,16 @@ class LocationRepository(private val context: Context) {
     val locationState: Flow<LocationState> = _locationState.asStateFlow()
     
     private var locationCallback: LocationCallback? = null
-    var isManualLocation = false
-        private set
+
+    // Single source of truth for manual-location mode (PRD M4): the repository owns
+    // the manual-location state so consumers (CompassViewModel, ManualLocationViewModel)
+    // cannot desync. The flag is reactive so UI state can observe it directly.
+    private val _isManualLocation = MutableStateFlow(false)
+    val isManualLocation: StateFlow<Boolean> = _isManualLocation.asStateFlow()
     private var manualLocation: Location? = null
 
     fun setManualLocation(location: Location) {
-        isManualLocation = true
+        _isManualLocation.value = true
         manualLocation = location
         _locationState.value = LocationState.Available(
             location = location,
@@ -76,7 +81,7 @@ class LocationRepository(private val context: Context) {
     }
 
     fun revertToGps() {
-        isManualLocation = false
+        _isManualLocation.value = false
         manualLocation = null
         // Restart location updates
         startLocationUpdates()
@@ -102,7 +107,7 @@ class LocationRepository(private val context: Context) {
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
-                if (isManualLocation) return // Don't update if in manual mode
+                if (isManualLocation.value) return // Don't update if in manual mode
 
                 locationResult.lastLocation?.let { location ->
                     val accuracyLevel = when {
@@ -134,7 +139,7 @@ class LocationRepository(private val context: Context) {
     }
 
     fun getLocation(): Flow<LocationState> {
-        if (!isManualLocation) {
+        if (!isManualLocation.value) {
             startLocationUpdates()
         }
         return locationState

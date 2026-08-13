@@ -39,8 +39,6 @@ class CompassViewModel(
     private val _uiState = MutableStateFlow(CompassUiState())
     val uiState: StateFlow<CompassUiState> = _uiState
 
-    private val manualLocationOverride = MutableStateFlow<Location?>(null)
-
     private val isManualCalibrationInProgress = MutableStateFlow(false)
 
     // Lifecycle gate for the sensor stream: CompassScreen sets this to false
@@ -61,24 +59,18 @@ class CompassViewModel(
         
         // Location-derived data (bearing + distance) recomputes only when the location
         // changes — never on the high-frequency orientation stream.
+        // LocationRepository is the single source of truth for both the location state
+        // (it already emits LocationState.Available for a manual location) and the
+        // manual-mode flag (PRD M4).
         val locationDerived = combine(
             locationRepository.getLocation(),
-            manualLocationOverride
-        ) { locationState, manualLocation ->
-            val activeLocationState = if (manualLocation != null) {
-                LocationState.Available(
-                    location = manualLocation,
-                    accuracy = 0f, // Manual location is precise
-                    accuracyLevel = com.bizzkoot.qiblafinder.model.LocationAccuracy.HIGH_ACCURACY
-                )
-            } else {
-                locationState
-            }
+            locationRepository.isManualLocation
+        ) { locationState, isManual ->
             LocationDerivedState(
-                locationState = activeLocationState,
-                qiblaBearing = calculateQiblaBearing(activeLocationState),
-                distanceToKaaba = calculateDistanceToKaaba(activeLocationState),
-                isManualLocation = manualLocation != null
+                locationState = locationState,
+                qiblaBearing = calculateQiblaBearing(locationState),
+                distanceToKaaba = calculateDistanceToKaaba(locationState),
+                isManualLocation = isManual
             )
         }
 
@@ -139,12 +131,11 @@ class CompassViewModel(
             latitude = mapLocation.latitude
             longitude = mapLocation.longitude
         }
-        manualLocationOverride.value = location
-        Timber.d("📍 Manual location override set: $location")
+        locationRepository.setManualLocation(location)
+        Timber.d("📍 Manual location set: $location")
     }
 
     fun revertToGps() {
-        manualLocationOverride.value = null
         locationRepository.revertToGps()
         Timber.d("📍 Reverted to GPS location")
     }

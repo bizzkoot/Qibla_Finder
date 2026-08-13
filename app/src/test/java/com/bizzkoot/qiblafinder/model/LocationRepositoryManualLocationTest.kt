@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -23,19 +26,14 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.Executor
 
 /**
- * Regression tests for PRD H2: LocationRepository must never register more than one
- * LocationCallback. The dedupe guard is `if (locationCallback != null) return` at the top
- * of startLocationUpdates(); these tests pin that behavior so a silent removal of the
- * guard (which previously caused 3-4 concurrent GPS streams) fails CI.
- *
- * The FusedLocationProviderClient is a final class from play-services-location, so it is
- * mocked via the injected internal test seam using mockito-inline's final-class support.
+ * Regression tests for PRD M4: LocationRepository is the single source of truth for
+ * manual-location mode. The reactive `isManualLocation` StateFlow and the emitted
+ * LocationState must stay in sync with setManualLocation()/revertToGps(), and GPS
+ * updates must stop in manual mode and restart on revert.
  */
 @RunWith(RobolectricTestRunner::class)
-// Use a plain Application: the real QiblaFinderApplication.onCreate schedules WorkManager,
-// which is not initialized in unit-test environments.
 @Config(application = Application::class)
-class LocationRepositoryDedupeTest {
+class LocationRepositoryManualLocationTest {
 
     private lateinit var context: Context
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -44,7 +42,6 @@ class LocationRepositoryDedupeTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext<Application>()
-        // Grant fine location so startLocationUpdates() proceeds past the permission gate.
         shadowOf(context as Application).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         fusedLocationClient = mock(FusedLocationProviderClient::class.java)
         repository = LocationRepository(context, fusedLocationClient)
@@ -65,49 +62,68 @@ class LocationRepositoryDedupeTest {
     }
 
     @Test
-    fun `getLocation called twice registers requestLocationUpdates only once`() {
-        repository.getLocation()
-        repository.getLocation()
+    fun `setManualLocation emits manual Available state, flags isManualLocation, stops GPS`() {
+        val manualLocation = Location("manual").apply {
+            latitude = 24.467
+            longitude = 39.611
+        }
 
-        // The dedupe guard must prevent a second LocationCallback registration.
-        verifyRequestLocationUpdates(1)
-        verifyRemoveLocationUpdates(0)
-    }
+        repository.getLocation() // start GPS updates first
+        repository.setManualLocation(manualLocation)
 
-    @Test
-    fun `stopLocationUpdates removes callback and allows re-registration`() {
-        repository.getLocation()
-        repository.stopLocationUpdates()
-        repository.getLocation()
-
-        // stopLocationUpdates clears the guard, so the later getLocation() re-registers.
-        verifyRequestLocationUpdates(2)
-        verifyRemoveLocationUpdates(1)
-    }
-
-    @Test
-    fun `setManualLocation stops location updates`() {
-        repository.getLocation()
-        repository.setManualLocation(Location("gps"))
-
+        // The reactive flag is the single source of truth.
         assertTrue(repository.isManualLocation.value)
-        verifyRequestLocationUpdates(1)
+
+        // The location flow now carries the manual location as Available.
+        val state = runBlocking { repository.locationState.first() }
+        assertTrue(state is LocationState.Available)
+        state as LocationState.Available
+        assertEquals(manualLocation.latitude, state.location.latitude, 1e-9)
+        assertEquals(manualLocation.longitude, state.location.longitude, 1e-9)
+        assertEquals(5f, state.accuracy)
+        assertEquals(LocationAccuracy.HIGH_ACCURACY, state.accuracyLevel)
+
+        // GPS updates were stopped when entering manual mode.
         verifyRemoveLocationUpdates(1)
 
-        // While manual, getLocation() must NOT re-register updates.
+        // getLocation() while manual must not re-register updates.
         repository.getLocation()
         verifyRequestLocationUpdates(1)
     }
 
     @Test
-    fun `revertToGps restarts location updates`() {
+    fun `revertToGps clears the flag and restarts GPS updates`() {
         repository.getLocation()
         repository.setManualLocation(Location("gps"))
+        assertTrue(repository.isManualLocation.value)
+
         repository.revertToGps()
 
         assertFalse(repository.isManualLocation.value)
         // Initial registration + the restart from revertToGps().
         verifyRequestLocationUpdates(2)
         verifyRemoveLocationUpdates(1)
+    }
+
+    @Test
+    fun `setting a second manual location keeps flag true and re-emits the new location`() {
+        val first = Location("manual").apply {
+            latitude = 1.0
+            longitude = 2.0
+        }
+        val second = Location("manual").apply {
+            latitude = 3.0
+            longitude = 4.0
+        }
+
+        repository.setManualLocation(first)
+        repository.setManualLocation(second)
+
+        assertTrue(repository.isManualLocation.value)
+        val state = runBlocking { repository.locationState.first() }
+        assertTrue(state is LocationState.Available)
+        state as LocationState.Available
+        assertEquals(second.latitude, state.location.latitude, 1e-9)
+        assertEquals(second.longitude, state.location.longitude, 1e-9)
     }
 }

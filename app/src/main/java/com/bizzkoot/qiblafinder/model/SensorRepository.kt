@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.pow
@@ -71,9 +71,8 @@ internal fun tiltAngleFromAccelerometer(x: Float, y: Float, z: Float): Float =
  * The phone counts as "upright / NOT flat" when its tilt from flat falls in this
  * band (65..115°). This is the alert band used by checkPhoneOrientation and by the
  * compass/AR "lay the phone flat" warnings, so the UI threshold and the detector
- * can never drift apart. NOTE: the legacy [OrientationState.Available.isPhoneFlat]
- * field is named INVERTED relative to this: `isPhoneFlat == true` actually means
- * the phone is UPRIGHT (tilt inside this band).
+ * can never drift apart. NOTE: [OrientationState.Available.isPhoneUpright] is the
+ * same test (`isPhoneUpright == true` means the phone is UPRIGHT / NOT flat).
  */
 const val NOT_FLAT_TILT_MIN_DEGREES = 65f
 const val NOT_FLAT_TILT_MAX_DEGREES = 115f
@@ -185,7 +184,9 @@ sealed interface OrientationState {
     data class Available(
         val trueHeading: Float,
         val compassStatus: CompassStatus,
-        val isPhoneFlat: Boolean = true,
+        // NOTE: follows the actual semantics — true when the phone is held UPRIGHT
+        // (tilt inside the NOT_FLAT_TILT band), false when lying flat.
+        val isPhoneUpright: Boolean = true,
         val isPhoneVertical: Boolean = false,
         val phoneTiltAngle: Float = 0f,
         val shouldShowCalibration: Boolean = false
@@ -229,9 +230,13 @@ class SensorRepository @Inject constructor(
     private val inclinationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
     private var lastHeading: Float = 0f
+    // Written on the main thread (setCalibrationOffset) and read from the sensor
+    // HandlerThread when emitting every heading; @Volatile gives cross-thread
+    // visibility so a stored offset is never missed by the emission pipeline.
+    @Volatile
     private var calibrationOffset: Double = 0.0
     private var cachedDeclination: Float = 0f
-    private var isPhoneFlat: Boolean = true
+    private var isPhoneUpright: Boolean = true
     private var isPhoneVertical: Boolean = false
     private var phoneTiltAngle: Float = 0f
     private val accelerometerReading = FloatArray(3)
@@ -258,10 +263,23 @@ class SensorRepository @Inject constructor(
         // Only one collection may own the shared sensor state at a time (see
         // collectionMutex). Acquire it for the whole lifetime of this collection;
         // awaitClose inside collectSensorReadings keeps the channel open until
-        // cancellation, at which point withLock releases the mutex to the next
-        // waiting collection (compass <-> AR handoff).
-        collectionMutex.withLock {
+        // cancellation, at which point the lock is released to the next waiting
+        // collection (compass <-> AR handoff). Acquisition is bounded by a timeout so
+        // a stale holder (e.g. a collection orphaned by process-state restore) can
+        // never starve every subsequent screen's sensors forever.
+        val lockAcquired = withTimeoutOrNull(SENSOR_MUTEX_ACQUIRE_TIMEOUT_MS) {
+            collectionMutex.lock()
+        }
+        if (lockAcquired == null) {
+            // Ownership stayed busy for too long: give up quietly. The next visibility
+            // change (flatMapLatest re-collection) will start a fresh attempt.
+            close()
+            return@callbackFlow
+        }
+        try {
             collectSensorReadings()
+        } finally {
+            collectionMutex.unlock()
         }
     }
 
@@ -361,7 +379,7 @@ class SensorRepository @Inject constructor(
             val newState = OrientationState.Available(
                 trueHeading = calibratedHeading,
                 compassStatus = currentStatus,
-                isPhoneFlat = isPhoneFlat,
+                isPhoneUpright = isPhoneUpright,
                 isPhoneVertical = isPhoneVertical,
                 phoneTiltAngle = phoneTiltAngle,
                 shouldShowCalibration = calibrationVisible
@@ -420,7 +438,7 @@ class SensorRepository @Inject constructor(
                         val newState = OrientationState.Available(
                             trueHeading = calibratedHeading,
                             compassStatus = currentStatus,
-                            isPhoneFlat = isPhoneFlat,
+                            isPhoneUpright = isPhoneUpright,
                             isPhoneVertical = isPhoneVertical,
                             phoneTiltAngle = phoneTiltAngle,
                             shouldShowCalibration = calibrationVisible
@@ -701,19 +719,18 @@ class SensorRepository @Inject constructor(
         phoneTiltAngle = tiltAngle
 
         // Vertical is when tilt is close to 0° or 180° (within 10 degrees - more strict)
-        val wasFlat = isPhoneFlat
+        val wasUpright = isPhoneUpright
         val wasVertical = isPhoneVertical
 
-        // NOTE: the field is named isPhoneFlat but its semantics are INVERTED:
-        // isPhoneFlat == true when the tilt is in the 65..115° band, i.e. the phone
-        // is UPRIGHT / NOT flat. The UI "lay the phone flat" alerts rely on this
-        // (alert when isPhoneFlat == true). The band is shared with the UI via
-        // NOT_FLAT_TILT_MIN/MAX_DEGREES so the alerts can use phoneTiltAngle directly.
-        isPhoneFlat = tiltAngle >= NOT_FLAT_TILT_MIN_DEGREES && tiltAngle <= NOT_FLAT_TILT_MAX_DEGREES
+        // isPhoneUpright is true when the tilt is in the 65..115° band, i.e. the
+        // phone is UPRIGHT / NOT flat — the condition that fires the "lay the phone
+        // flat" alerts. The band is shared with the UI via NOT_FLAT_TILT_MIN/MAX_DEGREES
+        // so the alerts can use phoneTiltAngle directly.
+        isPhoneUpright = tiltAngle >= NOT_FLAT_TILT_MIN_DEGREES && tiltAngle <= NOT_FLAT_TILT_MAX_DEGREES
         isPhoneVertical = (tiltAngle <= 10f) || (tiltAngle >= 170f)
         
-        if (wasFlat != isPhoneFlat || wasVertical != isPhoneVertical) {
-            Timber.d("📱 Phone orientation changed: ${if (isPhoneFlat) "FLAT" else "NOT FLAT"}, ${if (isPhoneVertical) "VERTICAL" else "NOT VERTICAL"} (tilt: ${tiltAngle.toInt()}°)")
+        if (wasUpright != isPhoneUpright || wasVertical != isPhoneVertical) {
+            Timber.d("📱 Phone orientation changed: ${if (isPhoneUpright) "UPRIGHT" else "FLAT"}, ${if (isPhoneVertical) "VERTICAL" else "NOT VERTICAL"} (tilt: ${tiltAngle.toInt()}°)")
         }
     }
 
@@ -721,21 +738,6 @@ class SensorRepository @Inject constructor(
         val delta = ((current - prev + 540f) % 360f) - 180f
         return (prev + alpha * delta + 360f) % 360f
     }
-    
-    /**
-     * Gets current phone orientation status
-     */
-    fun isPhoneFlat(): Boolean = isPhoneFlat
-    
-    /**
-     * Gets current phone vertical status
-     */
-    fun isPhoneVertical(): Boolean = isPhoneVertical
-    
-    /**
-     * Gets current phone tilt angle
-     */
-    fun getPhoneTiltAngle(): Float = phoneTiltAngle
 
     private fun getDisplayRotation(): Int {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -753,5 +755,13 @@ class SensorRepository @Inject constructor(
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay.rotation
         }
+    }
+
+    companion object {
+        // Bound on how long a new sensor collection waits for the collection mutex
+        // before giving up. 5 s is far longer than any real compass<->AR handoff but
+        // short enough that a leaked/stale holder cannot leave later screens with
+        // permanently unregistered sensors (W6).
+        private const val SENSOR_MUTEX_ACQUIRE_TIMEOUT_MS = 5_000L
     }
 }

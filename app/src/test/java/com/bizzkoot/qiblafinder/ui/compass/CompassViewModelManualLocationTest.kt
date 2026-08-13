@@ -6,10 +6,13 @@ import android.app.Application
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.location.Location
 import androidx.lifecycle.viewModelScope
 import com.bizzkoot.qiblafinder.MainDispatcherRule
 import com.bizzkoot.qiblafinder.model.CalibrationRepository
 import com.bizzkoot.qiblafinder.model.LocationRepository
+import com.bizzkoot.qiblafinder.model.LocationState
+import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.model.SensorRepository
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -18,11 +21,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
@@ -34,26 +39,17 @@ import org.robolectric.shadows.ShadowSensor
 import org.robolectric.shadows.ShadowSensorManager
 
 /**
- * PRD H4 lifecycle-gating tests against the REAL [CompassViewModel], not a re-implementation
- * of the gating pattern. CompassViewModel is constructed with the real SensorRepository
- * (Robolectric ShadowSensorManager) so that `onScreenVisible(false)` genuinely cancels the
- * sensor collection and `onScreenVisible(true)` re-registers it — the previous version of this
- * test hand-rolled the flatMapLatest logic and would pass even if onScreenVisible did nothing.
- *
- * It does NOT cover CompassScreen's lifecycle callbacks (those are Compose wiring); it covers
- * the ViewModel contract those callbacks rely on:
- *  - visible: getOrientationFlow() is being collected -> exactly one sensor listener;
- *  - hidden: the gated flow switches to emptyFlow -> listeners drop to 0;
- *  - visible again: a fresh collection re-registers -> listener count back to 1;
- *  - onScreenStopped(): GPS location updates are released on LocationRepository.
- *
- * Dispatchers.Main is replaced with an eager UnconfinedTestDispatcher so the ViewModel's
- * viewModelScope init collections run deterministically on the test thread.
+ * PRD M4 delegation tests: [CompassViewModel] must route manual-location mutations ONLY
+ * through [LocationRepository.setManualLocation]/[revertToGps] (the single source of truth),
+ * and [CompassUiState.isManualLocation] must reflect the repository's reactive flag rather
+ * than a ViewModel-local copy. Built on the real repos (SensorRepository via ShadowSensorManager,
+ * a spied LocationRepository for verifiability), so the uiState assertion exercises the real
+ * gated location combine in CompassViewModel.init.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
-class LifecycleGatingSemanticsTest {
+class CompassViewModelManualLocationTest {
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -80,8 +76,6 @@ class LifecycleGatingSemanticsTest {
         shadowSensorManager.addSensor(magnetometer)
         shadowSensorManager.addSensor(ShadowSensor.newInstance(Sensor.TYPE_GYROSCOPE))
 
-        // Spy: real behavior (getLocation/isManualLocation/setManualLocation all work) but
-        // invocations are verifiable, e.g. stopLocationUpdates from onScreenStopped().
         locationRepository = spy(
             LocationRepository(
                 context,
@@ -108,60 +102,59 @@ class LifecycleGatingSemanticsTest {
             event.values[i] = values[i]
         }
         event.timestamp = timestampNs
-        timestampNs += 33_333_333L // ~30 Hz spacing
+        timestampNs += 33_333_333L
         shadowSensorManager.sendSensorEventToListeners(event)
     }
 
     @Test
-    fun `onScreenVisible false unregisters the sensor listener and true re-registers it`() = runBlocking {
+    fun `setManualLocation delegates to the repository and uiState reflects the manual flag`() = runBlocking {
         val viewModel = buildViewModel()
-
-        // The gated orientation flow is collected in init -> exactly one listener.
         waitUntil("sensor listener registered on start") { shadowSensorManager.getListeners().size == 1 }
 
-        // A live reading flows through the UI state while visible.
+        // The uiState combine emits only once every source (location, orientation,
+        // calibration) has emitted; deliver one orientation reading first.
         fireFlatPose()
-        waitUntil("heading emitted while visible") {
+        waitUntil("uiState combine emitted") {
             viewModel.uiState.value.orientationState is OrientationState.Available
         }
 
-        // Hidden (AR / Sun Calibration / Manual Location / backgrounded): the collection is
-        // cancelled and the accelerometer + magnetometer + gyroscope stop running.
-        viewModel.onScreenVisible(false)
-        waitUntil("sensor listener unregistered while hidden") { shadowSensorManager.getListeners().isEmpty() }
+        viewModel.setManualLocation(MapLocation(latitude = 24.467, longitude = 39.611))
 
-        // Visible again: a fresh collection re-registers the listeners.
-        viewModel.onScreenVisible(true)
-        waitUntil("sensor listener re-registered on return") { shadowSensorManager.getListeners().size == 1 }
+        // The ViewModel must not own the mutation: it delegates to LocationRepository.
+        // `any()` registers a Mockito matcher but returns null, which would trip Kotlin's
+        // non-null parameter check on the Kotlin-declared setManualLocation(Location); the
+        // elvis supplies a non-null dummy while the matcher still matches any argument.
+        verify(locationRepository).setManualLocation(any() ?: Location("manual"))
 
-        viewModel.viewModelScope.cancel()
-        waitUntil("sensor listener unregistered after scope cancel") { shadowSensorManager.getListeners().isEmpty() }
-    }
-
-    @Test
-    fun `onScreenVisible toggles affect only the compass sensor collection`() = runBlocking {
-        val viewModel = buildViewModel()
-        waitUntil("sensor listener registered on start") { shadowSensorManager.getListeners().size == 1 }
-
-        viewModel.onScreenVisible(false)
-        waitUntil("sensor listener unregistered while hidden") { shadowSensorManager.getListeners().isEmpty() }
-
-        // No listener appears again without flipping visibility back.
-        viewModel.onScreenVisible(false)
-        delay(50)
-        assertEquals(0, shadowSensorManager.getListeners().size)
+        // uiState.isManualLocation reacts to the repository's StateFlow, not a local copy.
+        waitUntil("uiState reflects the manual flag") { viewModel.uiState.value.isManualLocation }
+        val state = viewModel.uiState.value.locationState
+        assertTrue("manual location must flow into uiState", state is LocationState.Available)
+        state as LocationState.Available
+        assertEquals(24.467, state.location.latitude, 1e-9)
+        assertEquals(39.611, state.location.longitude, 1e-9)
 
         viewModel.viewModelScope.cancel()
         waitUntil("sensor listener unregistered after scope cancel") { shadowSensorManager.getListeners().isEmpty() }
     }
 
     @Test
-    fun `onScreenStopped releases GPS location updates on the repository`() = runBlocking {
+    fun `revertToGps delegates to the repository and clears the manual flag in uiState`() = runBlocking {
         val viewModel = buildViewModel()
         waitUntil("sensor listener registered on start") { shadowSensorManager.getListeners().size == 1 }
 
-        viewModel.onScreenStopped()
-        verify(locationRepository).stopLocationUpdates()
+        fireFlatPose()
+        waitUntil("uiState combine emitted") {
+            viewModel.uiState.value.orientationState is OrientationState.Available
+        }
+
+        viewModel.setManualLocation(MapLocation(latitude = 24.467, longitude = 39.611))
+        waitUntil("uiState manual flag set") { viewModel.uiState.value.isManualLocation }
+
+        viewModel.revertToGps()
+        verify(locationRepository).revertToGps()
+
+        waitUntil("uiState manual flag cleared") { !viewModel.uiState.value.isManualLocation }
 
         viewModel.viewModelScope.cancel()
         waitUntil("sensor listener unregistered after scope cancel") { shadowSensorManager.getListeners().isEmpty() }

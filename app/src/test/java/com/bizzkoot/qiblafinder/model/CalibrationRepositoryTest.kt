@@ -4,7 +4,9 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -72,6 +74,32 @@ class CalibrationRepositoryTest {
         val repo2 = CalibrationRepository(context)
         assertEquals(42.5, repo2.getCurrentOffset(), 0.001)
         assertEquals(CalibrationResult(errorOffset = 42.5, timestamp = 333L), repo2.calibrationResult.value)
+    }
+
+    @Test
+    fun `a double offset is truncated to float precision when re-read from storage`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("sun_calibration", Context.MODE_PRIVATE)
+            .edit().clear().commit()
+
+        // Not representable in a Float: this pins the KNOWN precision loss of the
+        // SharedPreferences float storage. The in-memory StateFlow keeps the full
+        // Double, but a re-read (new instance) only sees the Float-truncated value.
+        val precise = 12.34567890123
+        CalibrationRepository(context).store(
+            CalibrationResult(errorOffset = precise, timestamp = 444L)
+        )
+
+        val reRead = CalibrationRepository(context).getCurrentOffset()
+
+        // The persisted Float is exactly 12.34567890123.toFloat() = 12.34567928314209;
+        // the double-precision source value is not preserved.
+        assertEquals(precise.toFloat().toDouble(), reRead, 0.0)
+        assertNotEquals(precise, reRead, 0.0)
+        assertTrue(
+            "observed Float precision loss should be tiny, not a gross error",
+            Math.abs(precise - reRead) < 0.001
+        )
     }
 
     @Test

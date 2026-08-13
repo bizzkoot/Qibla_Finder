@@ -33,9 +33,9 @@ import org.robolectric.shadows.ShadowSensorManager
  * getOrientationFlow() on a host JVM:
  *
  *  - "flat phone" (accelerometer z = +9.81) must emit Available(tilt≈0,
- *    isPhoneFlat=false) — no alert;
+ *    isPhoneUpright=false) — no alert;
  *  - "upright phone" (accelerometer y = +9.81) must emit Available(tilt≈90,
- *    isPhoneFlat=true) — the compass/AR "lay the phone flat" alert fires on this;
+ *    isPhoneUpright=true) — the compass/AR "lay the phone flat" alert fires on this;
  *  - the H4 lifecycle-gating pattern (cancel the collection, re-collect) must keep
  *    detecting both poses;
  *  - the repository-level serialization must ensure a second concurrent collection
@@ -101,22 +101,30 @@ class SensorOrientationRobolectricTest {
     }
 
     private fun fireUprightPose() {
-        // Phone upright (portrait): gravity on +Y -> tilt ≈ 90°, isPhoneFlat == true.
+        // Phone upright (portrait): gravity on +Y -> tilt ≈ 90°, isPhoneUpright == true.
         fireEvent(accelerometer, 0f, 9.81f, 0f)
         // Magnetometer rotated 90° so the magnetic vector is not parallel to gravity.
         fireEvent(magnetometer, 25f, 0f, 0f)
     }
 
+    private fun fireSouthPose() {
+        // Flat pose (same as fireFlatPose) with the magnetometer rotated 180° in the
+        // device plane: the computed magnetic heading must flip to ~180°, proving the
+        // heading pipeline reacts to the field direction instead of always emitting 0°.
+        fireEvent(accelerometer, 0f, 0f, 9.81f)
+        fireEvent(magnetometer, 0f, -25f, 0f)
+    }
+
     private fun assertFlat(state: OrientationState.Available) {
         assertEquals("tilt for flat phone", 0f, state.phoneTiltAngle, 0.5f)
-        assertFalse("flat phone must not be flagged as upright (isPhoneFlat)", state.isPhoneFlat)
+        assertFalse("flat phone must not be flagged as upright (isPhoneUpright)", state.isPhoneUpright)
         assertTrue("flat phone is vertical", state.isPhoneVertical)
         assertValidHeading(state.trueHeading)
     }
 
     private fun assertUpright(state: OrientationState.Available) {
         assertEquals("tilt for upright phone", 90f, state.phoneTiltAngle, 0.5f)
-        assertTrue("upright phone must flag the alert (isPhoneFlat is INVERTED naming)", state.isPhoneFlat)
+        assertTrue("upright phone must flag the alert (isPhoneUpright)", state.isPhoneUpright)
         assertFalse("upright phone is not vertical (tilt ~90)", state.isPhoneVertical)
         assertValidHeading(state.trueHeading)
     }
@@ -137,7 +145,7 @@ class SensorOrientationRobolectricTest {
     }
 
     @Test
-    fun `flat then upright phone flips isPhoneFlat and tilt in the emitted state`() = runBlocking {
+    fun `flat then upright phone flips isPhoneUpright and tilt in the emitted state`() = runBlocking {
         val (job, states) = collectStates()
         waitUntil("flow registered") { shadowSensorManager.getListeners().size == 1 }
 
@@ -146,15 +154,52 @@ class SensorOrientationRobolectricTest {
         assertFlat(states.last())
 
         fireUprightPose()
-        waitUntil("upright state emitted") { states.any { it.isPhoneFlat } }
+        waitUntil("upright state emitted") { states.any { it.isPhoneUpright } }
         assertUpright(states.last())
 
         // And back to flat: the alert must turn off again.
         fireFlatPose()
-        waitUntil("flat state emitted again") { states.isNotEmpty() && !states.last().isPhoneFlat }
+        waitUntil("flat state emitted again") { states.isNotEmpty() && !states.last().isPhoneUpright }
         assertFlat(states.last())
 
         job.cancel()
+    }
+
+    @Test
+    fun `known poses converge to stable deterministic headings`() = runBlocking {
+        val (job, states) = collectStates()
+        waitUntil("flow registered") { shadowSensorManager.getListeners().size == 1 }
+
+        // Fire enough events for the smoothing + Kalman fusion to fully converge, in
+        // small drained batches (callbackFlow's 64-slot buffer drops emissions while
+        // full, so the collector must drain between bursts).
+        repeat(10) {
+            val target = states.size + 10
+            repeat(10) { fireFlatPose() }
+            waitUntil("flat batch ${it + 1} drained") { states.size >= target }
+        }
+        val flatHeading = states.last().trueHeading
+
+        repeat(10) {
+            val target = states.size + 10
+            repeat(10) { fireSouthPose() }
+            waitUntil("south batch ${it + 1} drained") { states.size >= target }
+        }
+        val southHeading = states.last().trueHeading
+
+        // The exact headings are derived by the real SensorManager math
+        // (getRotationMatrix + remap + getOrientation) from the fixed sensor inputs:
+        // the flat pose faces magnetic north (~0°) while the south pose faces ~180°.
+        // Pinning the actual values guards against a regression that always emits 0°.
+        assertEquals("flat pose heading", 0f, flatHeading, 0.5f)
+        assertEquals("south pose heading", 180f, southHeading, 1.0f)
+        assertTrue(
+            "rotating the magnetometer must rotate the heading (flat=$flatHeading, south=$southHeading)",
+            Math.abs(southHeading - flatHeading) > 90f
+        )
+
+        job.cancel()
+        waitUntil("sensors unregistered at end") { shadowSensorManager.getListeners().isEmpty() }
     }
 
     @Test
@@ -175,7 +220,7 @@ class SensorOrientationRobolectricTest {
         val (job2, states2) = collectStates()
         waitUntil("second collection registered") { shadowSensorManager.getListeners().size == 1 }
         fireUprightPose()
-        waitUntil("second collection upright state") { states2.any { it.isPhoneFlat } }
+        waitUntil("second collection upright state") { states2.any { it.isPhoneUpright } }
         assertUpright(states2.last())
 
         job2.cancel()
@@ -199,7 +244,7 @@ class SensorOrientationRobolectricTest {
 
         // Events still reach the active collection only.
         fireUprightPose()
-        waitUntil("flow A upright state") { statesA.any { it.isPhoneFlat } }
+        waitUntil("flow A upright state") { statesA.any { it.isPhoneUpright } }
         assertUpright(statesA.last())
         assertTrue("waiting collection must not have emitted yet", statesB.isEmpty())
 

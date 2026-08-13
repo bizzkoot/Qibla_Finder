@@ -282,6 +282,10 @@ The keep-screen-on feature amplifies the value of these fixes; do them in the sa
 
 **Remaining (noted, not regressions):** M5/M6 (map tile cache + main-thread gc — high risk in the map feature; PRD says de-risk behind Phase 2).
 
+### Post-session regression fixes (user device test, Oct 2025)
+- **Flat-phone alert regression**: H4 gating + AR's independent collection raced on `SensorRepository`'s shared mutable state during compass↔AR transitions. Fixed with a repository-level `Mutex` serializing collection ownership (verified via Robolectric ShadowSensorManager test); compass alert + new AR warning banner driven by `phoneTiltAngle` via a shared 65–115° band. → `53bf2ae`
+- **AR screen timeout**: AR route now composes `KeepScreenOn` honoring the shared `keep_screen_on` preference. → `53bf2ae`
+
 ---
 
 ## 7. Open Questions (for the critique to challenge)

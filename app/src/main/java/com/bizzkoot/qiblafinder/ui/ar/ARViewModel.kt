@@ -11,12 +11,16 @@ import com.google.ar.core.Anchor
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Session
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ARViewModel(
     application: Application,
     private val locationRepository: LocationRepository,
@@ -46,8 +50,14 @@ class ARViewModel(
     private val _phoneTiltAngle = MutableStateFlow(0f)
     val phoneTiltAngle = _phoneTiltAngle.asStateFlow()
     
-    private val _isPhoneFlat = MutableStateFlow(true)
-    val isPhoneFlat = _isPhoneFlat.asStateFlow()
+    private val _isPhoneUpright = MutableStateFlow(true)
+    val isPhoneUpright = _isPhoneUpright.asStateFlow()
+
+    // W3: lifecycle gate for the sensor stream, mirroring CompassViewModel.screenVisible.
+    // ARScreen drives it on ON_PAUSE/ON_RESUME (seeded from the current lifecycle state)
+    // so backgrounding the app on the AR route stops the accelerometer/magnetometer/
+    // gyroscope collection instead of leaving it running at 30 Hz.
+    private val screenVisible = MutableStateFlow(true)
 
     init {
         viewModelScope.launch {
@@ -66,46 +76,68 @@ class ARViewModel(
     
     private fun startCompassMonitoring() {
         viewModelScope.launch {
-            combine(
-                sensorRepository.getOrientationFlow(),
-                locationRepository.getLocation()
-            ) { orientationState, locationState ->
-                when {
-                    orientationState is OrientationState.Available && 
-                    locationState is com.bizzkoot.qiblafinder.model.LocationState.Available -> {
-                        
-                        val trueHeading = orientationState.trueHeading
-                        val location = locationState.location
-                        
-                        // Calculate Qibla direction
-                        val qiblaBearing = GeodesyUtils.calculateQiblaBearing(
-                            location.latitude,
-                            location.longitude
-                        )
-                        
-                        // Calculate the difference between current heading and Qibla direction
-                        val directionDifference = (qiblaBearing - trueHeading + 360) % 360
-                        
-                        // Update state
-                        _qiblaDirection.value = directionDifference.toFloat()
-                        _phoneTiltAngle.value = orientationState.phoneTiltAngle
-                        _isPhoneFlat.value = orientationState.isPhoneFlat
-                        
-                        // Debug flat detection
-                        Timber.d("📱 AR Flat Detection - Tilt: ${orientationState.phoneTiltAngle}°, Flat: ${orientationState.isPhoneFlat}, Vertical: ${orientationState.isPhoneVertical}")
-                        
-                        // Check if aligned (within 5 degrees)
-                        val isAligned = directionDifference <= 5 || directionDifference >= 355
-                        _isAligned.value = isAligned
-                        
-                        Timber.d("🧭 AR Compass - Heading: ${trueHeading}°, Qibla: ${qiblaBearing}°, Difference: ${directionDifference}°, Aligned: $isAligned")
-                    }
-                    else -> {
-                        Timber.d("⚠️ AR Compass - Waiting for orientation and location data")
+            screenVisible.flatMapLatest { visible ->
+                if (!visible) {
+                    emptyFlow()
+                } else {
+                    combine(
+                        sensorRepository.getOrientationFlow(),
+                        locationRepository.getLocation()
+                    ) { orientationState, locationState ->
+                        when {
+                            orientationState is OrientationState.Available && 
+                            locationState is com.bizzkoot.qiblafinder.model.LocationState.Available -> {
+                                
+                                val trueHeading = orientationState.trueHeading
+                                val location = locationState.location
+                                
+                                // Calculate Qibla direction
+                                val qiblaBearing = GeodesyUtils.calculateQiblaBearing(
+                                    location.latitude,
+                                    location.longitude
+                                )
+                                
+                                // Calculate the difference between current heading and Qibla direction
+                                val directionDifference = (qiblaBearing - trueHeading + 360) % 360
+                                
+                                // Update state
+                                _qiblaDirection.value = directionDifference.toFloat()
+                                _phoneTiltAngle.value = orientationState.phoneTiltAngle
+                                _isPhoneUpright.value = orientationState.isPhoneUpright
+                                
+                                // Debug upright detection
+                                Timber.d("📱 AR Flat Detection - Tilt: ${orientationState.phoneTiltAngle}°, Upright: ${orientationState.isPhoneUpright}, Vertical: ${orientationState.isPhoneVertical}")
+                                
+                                // Check if aligned (within 5 degrees)
+                                val isAligned = directionDifference <= 5 || directionDifference >= 355
+                                _isAligned.value = isAligned
+                                
+                                Timber.d("🧭 AR Compass - Heading: ${trueHeading}°, Qibla: ${qiblaBearing}°, Difference: ${directionDifference}°, Aligned: $isAligned")
+                            }
+                            else -> {
+                                Timber.d("⚠️ AR Compass - Waiting for orientation and location data")
+                            }
+                        }
                     }
                 }
             }.collect { }
         }
+    }
+
+    /**
+     * Called by ARScreen when this route's lifecycle transitions to/from RESUMED.
+     * While false, the sensor + location collections are gated off.
+     */
+    fun onScreenVisible(visible: Boolean) {
+        screenVisible.value = visible
+    }
+
+    /**
+     * Called by ARScreen when the app is fully backgrounded (ON_STOP). Releases the
+     * shared GPS callback; returning re-subscribes getLocation() in the gated combine.
+     */
+    fun onScreenStopped() {
+        locationRepository.stopLocationUpdates()
     }
 
     fun createSession() {

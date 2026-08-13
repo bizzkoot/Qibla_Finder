@@ -172,12 +172,11 @@ class ManualLocationViewModel(
     }
 
     fun confirmLocation(): MapLocation? {
+        // The actual manual-location set happens on the compass route: QiblaNavHost
+        // passes the selection back through savedStateHandle and CompassViewModel
+        // calls LocationRepository.setManualLocation (single source of truth, PRD M4).
+        // Setting it here too would be redundant and could desync that source.
         return _uiState.value.selectedLocation?.also { mapLocation ->
-            val location = android.location.Location("manual").apply {
-                latitude = mapLocation.latitude
-                longitude = mapLocation.longitude
-            }
-            locationRepository.setManualLocation(location)
             Timber.d("📍 Location confirmed: $mapLocation")
         }
     }

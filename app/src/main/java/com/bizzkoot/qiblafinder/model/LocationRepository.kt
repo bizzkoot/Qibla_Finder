@@ -67,11 +67,9 @@ class LocationRepository(private val context: Context) {
     // cannot desync. The flag is reactive so UI state can observe it directly.
     private val _isManualLocation = MutableStateFlow(false)
     val isManualLocation: StateFlow<Boolean> = _isManualLocation.asStateFlow()
-    private var manualLocation: Location? = null
 
     fun setManualLocation(location: Location) {
         _isManualLocation.value = true
-        manualLocation = location
         _locationState.value = LocationState.Available(
             location = location,
             accuracy = 5f, // Manual location has a fixed high accuracy
@@ -82,7 +80,6 @@ class LocationRepository(private val context: Context) {
 
     fun revertToGps() {
         _isManualLocation.value = false
-        manualLocation = null
         // Restart location updates
         startLocationUpdates()
     }

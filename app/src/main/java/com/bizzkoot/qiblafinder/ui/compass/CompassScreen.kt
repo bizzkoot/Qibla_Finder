@@ -61,7 +61,7 @@ import kotlin.math.abs
 
 @Composable
 fun CompassScreen(
-    viewModel: CompassViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    viewModel: CompassViewModel,
     onNavigateToSunCalibration: (() -> Unit)? = null,
     onNavigateToAR: (() -> Unit)? = null,
     onNavigateToManualLocation: (() -> Unit)? = null,
@@ -91,10 +91,19 @@ fun CompassScreen(
             when (event) {
                 Lifecycle.Event.ON_RESUME -> viewModel.onScreenVisible(true)
                 Lifecycle.Event.ON_PAUSE -> viewModel.onScreenVisible(false)
+                // ON_STOP = the whole app is backgrounded (a covering route only
+                // pauses this entry). Release the shared GPS callback there so the
+                // device stops fixing location while nothing is on screen.
+                Lifecycle.Event.ON_STOP -> viewModel.onScreenStopped()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        // Seed screenVisible from the CURRENT lifecycle state: the observer only
+        // fires on transitions after registration, so a compass entry restored onto
+        // the back stack (process-death) would otherwise stay "visible=true" with
+        // its sensors running while covered by another route (W5).
+        viewModel.onScreenVisible(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
@@ -141,11 +150,13 @@ fun CompassScreen(
                         is OrientationState.Available -> oState.trueHeading
                     }
                     val difference = angleDiff(deviceRotation, qibla)
-                    val isPhoneFlat = when (val oState = orientationState) {
+                    val isPhoneUpright = when (val oState = orientationState) {
                         is OrientationState.Initializing -> false
-                        is OrientationState.Available -> oState.isPhoneFlat
+                        is OrientationState.Available -> oState.isPhoneUpright
                     }
-                    (difference <= 5f) && !isPhoneFlat
+                    // The arrow only counts as "aligned" while the phone is actually
+                    // FLAT (isPhoneUpright == true means the phone is held upright).
+                    (difference <= 5f) && !isPhoneUpright
                 } ?: false
                 
                 CompassGraphic(
@@ -156,10 +167,8 @@ fun CompassScreen(
                 
                 // Show red alert when the phone is NOT flat (held upright/vertical).
                 // Driven directly from phoneTiltAngle using the shared 65..115° band
-                // (NOT_FLAT_TILT_MIN/MAX_DEGREES in SensorRepository) instead of the
-                // legacy isPhoneFlat field, whose name is confusingly INVERTED
-                // (isPhoneFlat == true actually means UPRIGHT). Both detect the same
-                // condition; the tilt band is self-documenting and cannot drift.
+                // (NOT_FLAT_TILT_MIN/MAX_DEGREES in SensorRepository) so the tilt
+                // band is self-documenting and cannot drift from the detector.
                 when (val oState = orientationState) {
                     is OrientationState.Available -> {
                         if (isPhoneUpright(oState.phoneTiltAngle)) {

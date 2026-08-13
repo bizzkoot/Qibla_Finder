@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MAX_DEGREES
 import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MIN_DEGREES
@@ -50,6 +52,27 @@ fun ARScreen(
     val arCoreAvailability by viewModel.arCoreAvailability.collectAsState()
     val session by viewModel.session.collectAsState()
     val error by viewModel.error.collectAsState()
+
+    // W3/W5: lifecycle gate mirroring CompassScreen — stop the sensor + location
+    // collections whenever this route is not RESUMED, and release the GPS callback
+    // when the app is fully backgrounded. Seeded from the current lifecycle state so
+    // a restored entry that is already covered starts with sensors gated off.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onScreenVisible(true)
+                Lifecycle.Event.ON_PAUSE -> viewModel.onScreenVisible(false)
+                Lifecycle.Event.ON_STOP -> viewModel.onScreenStopped()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        viewModel.onScreenVisible(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -127,7 +150,7 @@ fun ARView(
     val qiblaDirection by viewModel.qiblaDirection.collectAsState()
     val isAligned by viewModel.isAligned.collectAsState()
     val phoneTiltAngle by viewModel.phoneTiltAngle.collectAsState()
-    val isPhoneFlat by viewModel.isPhoneFlat.collectAsState()
+    val isPhoneUpright by viewModel.isPhoneUpright.collectAsState()
     
     Box(modifier = Modifier.fillMaxSize()) {
         // Camera Preview Background
@@ -161,7 +184,7 @@ fun ARView(
             qiblaDirection = qiblaDirection,
             isAligned = isAligned,
             phoneTiltAngle = phoneTiltAngle,
-            isPhoneFlat = isPhoneFlat,
+            isPhoneUpright = isPhoneUpright,
             onNavigateBack = onNavigateBack
         )
         
@@ -230,7 +253,7 @@ fun QiblaDirectionOverlay(
     qiblaDirection: Float,
     isAligned: Boolean,
     phoneTiltAngle: Float,
-    isPhoneFlat: Boolean,
+    isPhoneUpright: Boolean,
     onNavigateBack: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -292,9 +315,8 @@ fun QiblaDirectionOverlay(
         
         // "Phone not flat" warning: the AR compass reading is only accurate with the
         // phone lying flat. Uses the same 65..115° tilt band as the compass red alert
-        // (NOT_FLAT_TILT_MIN/MAX_DEGREES, shared from SensorRepository). The legacy
-        // isPhoneFlat param is the INVERTED equivalent of this band (true == upright);
-        // the explicit tilt check keeps the UI self-documenting.
+        // (NOT_FLAT_TILT_MIN/MAX_DEGREES, shared from SensorRepository) so the check
+        // is self-documenting and cannot drift from the detector.
         if (phoneTiltAngle >= NOT_FLAT_TILT_MIN_DEGREES && phoneTiltAngle <= NOT_FLAT_TILT_MAX_DEGREES) {
             Card(
                 modifier = Modifier

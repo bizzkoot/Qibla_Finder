@@ -62,16 +62,25 @@ class CompassViewModel(
         // LocationRepository is the single source of truth for both the location state
         // (it already emits LocationState.Available for a manual location) and the
         // manual-mode flag (PRD M4).
-        val locationDerived = combine(
-            locationRepository.getLocation(),
-            locationRepository.isManualLocation
-        ) { locationState, isManual ->
-            LocationDerivedState(
-                locationState = locationState,
-                qiblaBearing = calculateQiblaBearing(locationState),
-                distanceToKaaba = calculateDistanceToKaaba(locationState),
-                isManualLocation = isManual
-            )
+        // W2: the combine is gated behind the same screen-visible signal as the
+        // orientation stream, so while the compass is not RESUMED it stops subscribing
+        // to LocationRepository (mirroring the H4 orientation pattern).
+        val locationDerived = screenVisible.flatMapLatest { visible ->
+            if (visible) {
+                combine(
+                    locationRepository.getLocation(),
+                    locationRepository.isManualLocation
+                ) { locationState, isManual ->
+                    LocationDerivedState(
+                        locationState = locationState,
+                        qiblaBearing = calculateQiblaBearing(locationState),
+                        distanceToKaaba = calculateDistanceToKaaba(locationState),
+                        isManualLocation = isManual
+                    )
+                }
+            } else {
+                emptyFlow()
+            }
         }
 
         // Gate the high-frequency orientation stream behind screen visibility:
@@ -88,14 +97,17 @@ class CompassViewModel(
         viewModelScope.launch {
             combine(
                 locationDerived,
-                gatedOrientationFlow
-            ) { derived, orientationState ->
+                gatedOrientationFlow,
+                // N5: collect the calibration state flow so isSunCalibrated reacts to
+                // store/clear instead of being read once from `.value` inside the combine.
+                calibrationRepository.calibrationResult
+            ) { derived, orientationState, calibrationResult ->
                 CompassUiState(
                     locationState = derived.locationState,
                     orientationState = orientationState,
                     qiblaBearing = derived.qiblaBearing,
                     distanceToKaaba = derived.distanceToKaaba,
-                    isSunCalibrated = calibrationRepository.calibrationResult.value != null,
+                    isSunCalibrated = calibrationResult != null,
                     isManualLocation = derived.isManualLocation
                 )
             }.collect { state ->
@@ -142,10 +154,21 @@ class CompassViewModel(
 
     /**
      * Called by CompassScreen when its lifecycle transitions to/from RESUMED.
-     * While false, the orientation sensor stream is gated off.
+     * While false, the orientation sensor stream and the location collection are
+     * gated off.
      */
     fun onScreenVisible(visible: Boolean) {
         screenVisible.value = visible
+    }
+
+    /**
+     * Called by CompassScreen when the app is fully backgrounded (ON_STOP). Releases
+     * the shared GPS callback so the device stops fixing location while nothing is
+     * on screen; returning to the compass re-subscribes getLocation() (gated flow),
+     * which restarts updates unless manual mode is active.
+     */
+    fun onScreenStopped() {
+        locationRepository.stopLocationUpdates()
     }
 
     private fun calculateQiblaBearing(locationState: LocationState): Float? {

@@ -10,7 +10,7 @@ import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.LocationState
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.model.SensorRepository
-import com.bizzkoot.qiblafinder.ui.location.MapLocation
+import com.bizzkoot.qiblafinder.model.MapLocation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine

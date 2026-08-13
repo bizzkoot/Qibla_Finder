@@ -34,6 +34,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 import com.bizzkoot.qiblafinder.R
 import timber.log.Timber

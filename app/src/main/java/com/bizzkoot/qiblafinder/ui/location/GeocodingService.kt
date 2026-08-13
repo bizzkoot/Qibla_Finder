@@ -3,6 +3,7 @@ package com.bizzkoot.qiblafinder.ui.location
 import android.content.Context
 import android.location.Address
 import android.location.Geocoder
+import com.bizzkoot.qiblafinder.model.MapLocation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull

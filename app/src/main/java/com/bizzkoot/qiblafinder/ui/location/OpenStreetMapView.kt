@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Canvas as ComposeCanvas
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch

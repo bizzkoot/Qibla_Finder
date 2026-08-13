@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.bizzkoot.qiblafinder.model.GeodesyUtils
 import com.bizzkoot.qiblafinder.model.GeodesyResult
+import com.bizzkoot.qiblafinder.model.MapLocation
 import timber.log.Timber
 import kotlin.math.*
 

@@ -22,7 +22,6 @@ import com.bizzkoot.qiblafinder.navigation.QiblaNavHost
 import com.bizzkoot.qiblafinder.navigation.rememberQiblaAppState
 import com.bizzkoot.qiblafinder.permissions.PermissionManager
 import com.bizzkoot.qiblafinder.ui.permissions.PermissionScreen
-import com.bizzkoot.qiblafinder.update.ui.UpdateNotificationBanner
 import com.bizzkoot.qiblafinder.update.ui.EnhancedUpdateNotificationBanner
 import com.bizzkoot.qiblafinder.update.services.EnhancedDownloadManager
 import com.bizzkoot.qiblafinder.update.viewmodel.UpdateNotificationViewModel

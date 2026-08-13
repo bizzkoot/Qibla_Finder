@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.bizzkoot.qiblafinder.model.GeodesyUtils
 import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.LocationState
+import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.ui.location.QiblaPerformanceOptimizer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

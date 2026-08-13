@@ -22,7 +22,7 @@ import com.bizzkoot.qiblafinder.ui.compass.CompassViewModel
 import com.bizzkoot.qiblafinder.ui.compass.CompassPreferences
 import com.bizzkoot.qiblafinder.ui.compass.KeepScreenOn
 import androidx.compose.runtime.collectAsState
-import com.bizzkoot.qiblafinder.ui.location.MapLocation
+import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.ui.sunCalibration.SunCalibrationScreen
 import com.bizzkoot.qiblafinder.ui.ar.ARScreen
 import com.bizzkoot.qiblafinder.ui.ar.ARViewModel

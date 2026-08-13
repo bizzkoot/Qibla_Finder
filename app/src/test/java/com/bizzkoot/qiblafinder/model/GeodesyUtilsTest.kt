@@ -1,6 +1,6 @@
 package com.bizzkoot.qiblafinder.model
 
-import com.bizzkoot.qiblafinder.ui.location.MapLocation
+import com.bizzkoot.qiblafinder.model.MapLocation
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.math.*

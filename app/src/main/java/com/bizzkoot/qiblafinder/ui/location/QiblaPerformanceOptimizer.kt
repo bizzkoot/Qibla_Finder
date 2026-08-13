@@ -1,6 +1,7 @@
 package com.bizzkoot.qiblafinder.ui.location
 
 import androidx.compose.ui.geometry.Offset
+import com.bizzkoot.qiblafinder.model.MapLocation
 import kotlinx.coroutines.*
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap

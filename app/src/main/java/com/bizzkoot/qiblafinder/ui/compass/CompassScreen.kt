@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,6 +53,8 @@ import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.ui.calibration.CalibrationOverlay
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlin.math.abs
 
 @Composable
@@ -73,6 +76,27 @@ fun CompassScreen(
     val isManualLocation = uiState.isManualLocation
     val showCalibration by viewModel.showCalibration.collectAsState()
     val typography = QiblaTypography.current
+
+    // Lifecycle gate: pause the compass sensor stream whenever this screen is no
+    // longer RESUMED (AR / Sun Calibration / Manual Location / Help pushed on top,
+    // or the app backgrounded). Inside a NavHost, LocalLifecycleOwner is the
+    // NavBackStackEntry lifecycle, which drops to STARTED (ON_PAUSE) as soon as
+    // another destination covers this one, and returns to RESUMED (ON_RESUME)
+    // when the user comes back.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onScreenVisible(true)
+                Lifecycle.Event.ON_PAUSE -> viewModel.onScreenVisible(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     
 
     

@@ -11,9 +11,12 @@ import com.bizzkoot.qiblafinder.model.LocationState
 import com.bizzkoot.qiblafinder.model.OrientationState
 import com.bizzkoot.qiblafinder.model.SensorRepository
 import com.bizzkoot.qiblafinder.model.MapLocation
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -26,6 +29,7 @@ data class CompassUiState(
     val isManualLocation: Boolean = false
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class CompassViewModel(
     private val locationRepository: LocationRepository,
     private val sensorRepository: SensorRepository,
@@ -38,6 +42,14 @@ class CompassViewModel(
     private val manualLocationOverride = MutableStateFlow<Location?>(null)
 
     private val isManualCalibrationInProgress = MutableStateFlow(false)
+
+    // Lifecycle gate for the sensor stream: CompassScreen sets this to false
+    // whenever this screen is not RESUMED (AR / Sun Calibration / Manual Location /
+    // Help pushed on top, or the app backgrounded), so getOrientationFlow() is
+    // cancelled and the accelerometer + magnetometer + gyroscope stop running.
+    // Defaults to true because the ViewModel is created while the compass screen
+    // is the active destination.
+    private val screenVisible = MutableStateFlow(true)
 
     // Must be initialized before 'init' block uses it
     private val _showCalibration = MutableStateFlow(false)
@@ -70,10 +82,21 @@ class CompassViewModel(
             )
         }
 
+        // Gate the high-frequency orientation stream behind screen visibility:
+        // while the compass is not RESUMED, flatMapLatest switches to an empty
+        // flow, which cancels the sensor collection (SensorRepository unregisters
+        // the listeners in awaitClose). combine caches the last value per source,
+        // so the UI keeps showing the last heading while hidden and immediately
+        // resumes with live readings when the compass becomes visible again —
+        // no Initializing flash on return.
+        val gatedOrientationFlow = screenVisible.flatMapLatest { visible ->
+            if (visible) sensorRepository.getOrientationFlow() else emptyFlow()
+        }
+
         viewModelScope.launch {
             combine(
                 locationDerived,
-                sensorRepository.getOrientationFlow()
+                gatedOrientationFlow
             ) { derived, orientationState ->
                 CompassUiState(
                     locationState = derived.locationState,
@@ -124,6 +147,14 @@ class CompassViewModel(
         manualLocationOverride.value = null
         locationRepository.revertToGps()
         Timber.d("📍 Reverted to GPS location")
+    }
+
+    /**
+     * Called by CompassScreen when its lifecycle transitions to/from RESUMED.
+     * While false, the orientation sensor stream is gated off.
+     */
+    fun onScreenVisible(visible: Boolean) {
+        screenVisible.value = visible
     }
 
     private fun calculateQiblaBearing(locationState: LocationState): Float? {

@@ -277,8 +277,10 @@ The keep-screen-on feature amplifies the value of these fixes; do them in the sa
 | **H1 — sun-calibration wiring** (`CalibrationRepository` + compass/sun routes + `CompassViewModel` wiring) | ✅ DONE (subagent-implemented, parent-verified) | 80 unit tests green (74 + 6 new); lint 107 (down from 110); 0 new warnings |
 | **H5 — dead-code deletion** (1,018 lines; `MapLocation` → `model/`, fixes M2 inversion) | ✅ DONE (subagent-implemented, parent-verified) | 80 tests green (unchanged); lint 103 (down from 107); 0 new |
 | **H4 — lifecycle sensor gating** (`screenVisible` + `flatMapLatest` in `CompassViewModel`, lifecycle observer in `CompassScreen`) | ✅ DONE (subagent-implemented, parent-verified) | 81 tests green (80 + 1 new gating test); lint unchanged 103; 0 new |
+| **M1 — dark mode** (`darkColorScheme`/`lightColorScheme` + `values-night` + `values-v27` cutout fix + compass text color) | ✅ DONE (subagent-implemented, parent-verified) | 81 tests green; **lint 0 errors for the first time** (pre-existing `styles.xml` NewApi fixed via `values-v27`); 103 warnings unchanged |
+| **H2/H3 — regression tests** (`LocationRepositoryDedupeTest` ×4, `CompassFilterConfigTest` ×4, test seams) | ✅ DONE (subagent-implemented, parent-verified) | **89 tests green** (81 + 8 new); lint 0 errors; +2 warnings = mockito version notices only |
 
-**Deferred (noted, not regressions):** M5/M6 (map tile cache + main-thread gc — high risk in the map feature; PRD says de-risk behind Phase 2); M1 dark mode; H2/H3 regression tests (H4 has a semantics test).
+**Remaining (noted, not regressions):** M5/M6 (map tile cache + main-thread gc — high risk in the map feature; PRD says de-risk behind Phase 2).
 
 ---
 

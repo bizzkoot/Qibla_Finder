@@ -279,6 +279,7 @@ The keep-screen-on feature amplifies the value of these fixes; do them in the sa
 | **H4 — lifecycle sensor gating** (`screenVisible` + `flatMapLatest` in `CompassViewModel`, lifecycle observer in `CompassScreen`) | ✅ DONE (subagent-implemented, parent-verified) | 81 tests green (80 + 1 new gating test); lint unchanged 103; 0 new |
 | **M1 — dark mode** (`darkColorScheme`/`lightColorScheme` + `values-night` + `values-v27` cutout fix + compass text color) | ✅ DONE (subagent-implemented, parent-verified) | 81 tests green; **lint 0 errors for the first time** (pre-existing `styles.xml` NewApi fixed via `values-v27`); 103 warnings unchanged |
 | **H2/H3 — regression tests** (`LocationRepositoryDedupeTest` ×4, `CompassFilterConfigTest` ×4, test seams) | ✅ DONE (subagent-implemented, parent-verified) | **89 tests green** (81 + 8 new); lint 0 errors; +2 warnings = mockito version notices only |
+| **M4 — manual-location single source of truth** (`isManualLocation` → repo `StateFlow`; `manualLocationOverride` deleted; VM delegates `setManualLocation`/`revertToGps` to repo; also stops GPS on manual select — aligns with H2) | ✅ DONE (subagent-implemented, parent-verified) | **102 tests green** (99 baseline + 3 new repo tests); lint 0 errors, 105 warnings = baseline; 0 new |
 
 **Remaining (noted, not regressions):** M5/M6 (map tile cache + main-thread gc — high risk in the map feature; PRD says de-risk behind Phase 2).
 

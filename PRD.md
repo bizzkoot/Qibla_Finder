@@ -275,8 +275,10 @@ The keep-screen-on feature amplifies the value of these fixes; do them in the sa
 | H8 — camera optional for compass (PermissionManager/Screen + SunCalibration lazy launcher) | ✅ DONE | build + tests green |
 | Lint | 1 error (pre-existing `styles.xml` NewApi) + 110 warnings vs 108 baseline — **+2 are dependency-version notices only**; 0 new code warnings | verified via `git stash` baseline diff |
 | **H1 — sun-calibration wiring** (`CalibrationRepository` + compass/sun routes + `CompassViewModel` wiring) | ✅ DONE (subagent-implemented, parent-verified) | 80 unit tests green (74 + 6 new); lint 107 (down from 110); 0 new warnings |
+| **H5 — dead-code deletion** (1,018 lines; `MapLocation` → `model/`, fixes M2 inversion) | ✅ DONE (subagent-implemented, parent-verified) | 80 tests green (unchanged); lint 103 (down from 107); 0 new |
+| **H4 — lifecycle sensor gating** (`screenVisible` + `flatMapLatest` in `CompassViewModel`, lifecycle observer in `CompassScreen`) | ✅ DONE (subagent-implemented, parent-verified) | 81 tests green (80 + 1 new gating test); lint unchanged 103; 0 new |
 
-**Deferred (noted, not regressions):** H4 (full lifecycle sensor gating — VM restructure); H5 (dead-code deletion — requires `MapLocation` relocation first); M5/M6 (map tile cache + main-thread gc — high risk in the map feature); M1 dark mode; H2/H3/H4 regression tests (needs ViewModel test infra).
+**Deferred (noted, not regressions):** M5/M6 (map tile cache + main-thread gc — high risk in the map feature; PRD says de-risk behind Phase 2); M1 dark mode; H2/H3 regression tests (H4 has a semantics test).
 
 ---
 

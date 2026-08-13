@@ -274,8 +274,9 @@ The keep-screen-on feature amplifies the value of these fixes; do them in the sa
 | M13 — split `CompassViewModel` combine (geodesy only on location change) | ✅ DONE | build + tests green |
 | H8 — camera optional for compass (PermissionManager/Screen + SunCalibration lazy launcher) | ✅ DONE | build + tests green |
 | Lint | 1 error (pre-existing `styles.xml` NewApi) + 110 warnings vs 108 baseline — **+2 are dependency-version notices only**; 0 new code warnings | verified via `git stash` baseline diff |
+| **H1 — sun-calibration wiring** (`CalibrationRepository` + compass/sun routes + `CompassViewModel` wiring) | ✅ DONE (subagent-implemented, parent-verified) | 80 unit tests green (74 + 6 new); lint 107 (down from 110); 0 new warnings |
 
-**Deferred (noted, not regressions):** H1 (sun-calibration wiring — needs a CalibrationRepository, riskier); H4 (full lifecycle sensor gating — VM restructure); H5 (dead-code deletion — requires `MapLocation` relocation first); M5/M6 (map tile cache + main-thread gc — high risk in the map feature); M1 dark mode; H2/H3/H4 regression tests (needs ViewModel test infra).
+**Deferred (noted, not regressions):** H4 (full lifecycle sensor gating — VM restructure); H5 (dead-code deletion — requires `MapLocation` relocation first); M5/M6 (map tile cache + main-thread gc — high risk in the map feature); M1 dark mode; H2/H3/H4 regression tests (needs ViewModel test infra).
 
 ---
 

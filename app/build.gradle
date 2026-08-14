@@ -110,7 +110,6 @@ dependencies {
     implementation libs.mapsforge.themes
     
     // Window insets support for modern edge-to-edge design
-    implementation libs.androidx.compose.foundation
     
     testImplementation libs.junit
     testImplementation libs.robolectric

@@ -30,10 +30,15 @@ always creates **draft** releases.
 
 When `[release]` is present, the workflow still auto-bumps, tags, builds, and drafts — no
 human-in-the-loop steps inside the workflow:
-- `feat`/`feature`/`enhancement` → minor bump; `fix`/`bug`/`patch` or any other commit → patch;
-  `breaking`/`major` → major bump. Format: `type(scope): description`.
-- The bump type is computed from the **full commit range of the push** (`before..after`), taking the
-  highest severity across all commits — not just the HEAD commit.
+- **The bump is driven ONLY by each commit's subject-line type prefix — commit bodies are
+  never scanned.** Bump severity is read from the **subject** (`git log --format=%s`) of every
+  commit in the push range (`before..after`), taking the highest severity — not just HEAD.
+  - `breaking:`/`major:` (or any type with the `!` breaking marker, e.g. `feat!:` / `fix(api)!:`) → **major**;
+  - `feat:`/`feature:`/`enhancement:` → **minor**;
+  - everything else — `fix:`, `chore:`, `docs:`, `test:`, `refactor:`, `perf:`, `ci:`, `build:`, `revert:` → **patch**.
+  - **A `chore:`/`fix:`/`docs:` commit can never bump major or minor.** Prose in a commit body
+    (or a non-type-prefix mention of "breaking"/"major") is ignored, so it cannot accidentally
+    trigger a big version bump.
 - It edits `versionName`/`versionCode` in `app/build.gradle`, commits `chore: bump version to X [skip ci]`,
   tags `vX.Y.Z`, builds a signed release APK, and uploads it as a **draft** release.
 - Releases are created as **DRAFTs**: a human must publish the draft on GitHub. Until published,

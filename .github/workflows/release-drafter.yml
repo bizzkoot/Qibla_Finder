@@ -47,13 +47,16 @@ jobs:
           echo "before=${{ github.event.before }}"
           echo "after=${{ github.event.after }}"
 
-          # Collect every commit message in the pushed range (before..after).
-          # Falls back to the HEAD commit message for the first push to main.
-          COMMITS=$(git log --format=%B "${{ github.event.before }}..${{ github.event.after }}" 2>/dev/null || true)
-          if [ -z "$COMMITS" ]; then
-            COMMITS=$(git log -1 --format=%B)
+          # Collect every commit SUBJECT in the pushed range (before..after).
+          # Subjects only (--format=%s): the bump is driven solely by each
+          # commit's conventional-commit TYPE PREFIX, so prose in commit
+          # bodies can never influence the version. Falls back to the HEAD
+          # subject for the first push to main.
+          SUBJECTS=$(git log --format=%s "${{ github.event.before }}..${{ github.event.after }}" 2>/dev/null || true)
+          if [ -z "$SUBJECTS" ]; then
+            SUBJECTS=$(git log -1 --format=%s)
           fi
-          LOWER=$(printf '%s' "$COMMITS" | tr '[:upper:]' '[:lower:]')
+          LOWER=$(printf '%s' "$SUBJECTS" | tr '[:upper:]' '[:lower:]')
 
           # Get current version
           CURRENT_VERSION=$(grep "versionName" app/build.gradle | sed 's/.*versionName "\(.*\)"/\1/')
@@ -65,14 +68,20 @@ jobs:
           MINOR=${VERSION_PARTS[1]}
           PATCH=${VERSION_PARTS[2]}
 
-          # Determine bump type from the HIGHEST severity across all commits in the range:
-          # major > minor > patch
-          if printf '%s' "$LOWER" | grep -qE '\b(breaking|major)\b'; then
+          # Determine bump type from the HIGHEST severity across all subjects
+          # in the range (major > minor > patch), using ONLY the type prefix:
+          #   breaking:/major: or any type with the breaking `!` marker
+          #     (e.g. feat!:, fix(api)!:)                  -> major
+          #   feat:/feature:/enhancement:                 -> minor
+          #   everything else (fix, chore, docs, test, ...) -> patch
+          # Bodies are NEVER scanned, so prose mentioning 'breaking', 'major'
+          # or 'feat' cannot force a bump.
+          if printf '%s' "$LOWER" | grep -qE '^(breaking|major)(\([^)]*\))?!?:|^[a-z]+(\([^)]*\))?!:'; then
             NEW_MAJOR=$((MAJOR + 1))
             NEW_MINOR=0
             NEW_PATCH=0
             BUMP_TYPE="major"
-          elif printf '%s' "$LOWER" | grep -qE '\b(feat|feature|enhancement)\b'; then
+          elif printf '%s' "$LOWER" | grep -qE '^(feat|feature|enhancement)(\([^)]*\))?!?:'; then
             NEW_MAJOR=$MAJOR
             NEW_MINOR=$((MINOR + 1))
             NEW_PATCH=0

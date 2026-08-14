@@ -179,8 +179,16 @@ git push origin main
 
 ## 📊 Version Bumping Rules
 
+> **Bump detection is subject-only.** `release-drafter.yml` reads each commit's
+> **subject line** (`git log --format=%s`) and matches the conventional-commit
+> **type prefix** — commit **bodies are never scanned**, so prose mentioning
+> "breaking", "major", or "feat" in a description cannot influence the version.
+> `chore:`, `fix:`, `docs:`, `test:`, `refactor:`, `perf:`, `ci:`, ... can only
+> ever produce a **patch** bump.
+
 ### **Major Version (X.0.0)**
-**Keywords:** `breaking`, `major`
+**Keywords:** `breaking`, `major` — as the type prefix, or any type with the
+breaking marker `!` (e.g. `feat!:` / `fix(api)!:`).
 **Examples:**
 - `breaking(api): change sensor data format`
 - `major(ui): redesign navigation structure`

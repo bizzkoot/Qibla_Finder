@@ -99,31 +99,47 @@ echo ""
 echo "🎯 Testing version bump logic..."
 echo "-------------------------------"
 
-# Test version bump logic with sample commit messages
+# Test version bump logic with sample commit messages.
+# Mirrors release-drafter.yml exactly: subject-only scan of the
+# conventional-commit type prefix; bodies never influence the bump.
+FAILED_BUMP_CHECKS=0
 test_version_bump() {
     local commit_msg="$1"
     local expected_bump="$2"
-    
-    echo -e "${YELLOW}Testing: '$commit_msg'${NC}"
-    
-    # Simulate version bump logic
-    if echo "$commit_msg" | grep -q "breaking\|major"; then
-        echo -e "${GREEN}✅ Would trigger MAJOR bump${NC}"
-    elif echo "$commit_msg" | grep -q "feat\|feature\|enhancement"; then
-        echo -e "${GREEN}✅ Would trigger MINOR bump${NC}"
-    elif echo "$commit_msg" | grep -q "fix\|bug\|patch"; then
-        echo -e "${GREEN}✅ Would trigger PATCH bump${NC}"
+    local actual
+    local lower
+
+    lower=$(printf '%s' "$commit_msg" | tr '[:upper:]' '[:lower:]')
+    if printf '%s' "$lower" | grep -qE '^(breaking|major)(\([^)]*\))?!?:|^[a-z]+(\([^)]*\))?!:'; then
+        actual="major"
+    elif printf '%s' "$lower" | grep -qE '^(feat|feature|enhancement)(\([^)]*\))?!?:'; then
+        actual="minor"
     else
-        echo -e "${GREEN}✅ Would trigger PATCH bump (default)${NC}"
+        actual="patch"
     fi
-    echo ""
+
+    if [ "$actual" = "$expected_bump" ]; then
+        echo -e "${GREEN}✅ '$commit_msg' -> $actual (expected $expected_bump)${NC}"
+    else
+        echo -e "${RED}❌ '$commit_msg' -> $actual (expected $expected_bump)${NC}"
+        FAILED_BUMP_CHECKS=$((FAILED_BUMP_CHECKS + 1))
+    fi
 }
 
-test_version_bump "feat(compass): add magnetic declination correction"
-test_version_bump "fix(camera): resolve permission error"
-test_version_bump "breaking(api): change sensor data format"
-test_version_bump "docs(readme): update installation guide"
+test_version_bump "feat(compass): add magnetic declination correction" "minor"
+test_version_bump "fix(camera): resolve permission error" "patch"
+test_version_bump "breaking(api): change sensor data format" "major"
+test_version_bump "docs(readme): update installation guide" "patch"
+# Hardening cases: prose in the subject (not the type prefix) and a
+# non-commit-type body mentioning trigger words must NOT change the bump.
+test_version_bump "docs: explain how to avoid a major api break in the guide" "patch"
+test_version_bump "chore: bump version to 2.10.4 [skip ci]" "patch"
+# Conventional-commit breaking marker `!` -> major.
+test_version_bump "feat!: remove legacy compass API" "major"
+test_version_bump "fix(api)!: change sensor data format" "major"
 
+echo ""
+echo -e "${YELLOW}Version bump checks failed: $FAILED_BUMP_CHECKS${NC}"
 echo ""
 echo "📊 Summary..."
 echo "-------------"

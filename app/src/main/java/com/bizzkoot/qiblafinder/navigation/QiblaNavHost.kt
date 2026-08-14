@@ -53,6 +53,13 @@ fun QiblaNavHost(
     val navContext = LocalContext.current
     val calibrationRepository = remember { CalibrationRepository(navContext.applicationContext) }
 
+    // PRD M17: keep-screen-on state is hoisted to the NavHost level so BOTH the compass
+    // route (toggle source of truth) and the AR route observe the SAME live value. The
+    // AR route previously snapshotted the preference once via remember{}, so a
+    // mid-session toggle on the compass was never honored on the AR screen.
+    val compassPreferences = remember { CompassPreferences(navContext.applicationContext) }
+    var keepScreenOn by remember { mutableStateOf(compassPreferences.getKeepScreenOn()) }
+
     NavHost(
         navController = navController,
         startDestination = QiblaAppState.COMPASS_ROUTE,
@@ -61,9 +68,8 @@ fun QiblaNavHost(
         composable(QiblaAppState.COMPASS_ROUTE) { backStackEntry ->
             Timber.d("🎯 QiblaNavHost - Compass screen composable called")
 
-            // Keep-screen-on: persisted toggle + lifecycle-safe window flag
-            val compassPreferences = remember { CompassPreferences(navContext.applicationContext) }
-            var keepScreenOn by remember { mutableStateOf(compassPreferences.getKeepScreenOn()) }
+            // Keep-screen-on: lifecycle-safe window flag driven by the hoisted state
+            // (created once at the NavHost level, shared with the AR route).
             KeepScreenOn(enabled = keepScreenOn)
             
             val viewModel: CompassViewModel = viewModel(
@@ -154,11 +160,11 @@ fun QiblaNavHost(
             Timber.d("🎯 QiblaNavHost - AR screen composable called")
             val context = LocalContext.current
 
-            // Keep the AR screen awake too: reuse the SAME persisted "keep_screen_on"
-            // preference as the compass route, so the in-compass toggle controls both
-            // routes. No toggle UI is needed here — KeepScreenOn just honors the value.
-            val compassPreferences = remember { CompassPreferences(context.applicationContext) }
-            KeepScreenOn(enabled = remember { compassPreferences.getKeepScreenOn() })
+            // Keep the AR screen awake too: reuse the SAME hoisted "keep_screen_on"
+            // state as the compass route, so the in-compass toggle controls both routes
+            // AND live toggle changes are honored on the AR screen (PRD M17). No toggle
+            // UI is needed here — KeepScreenOn just honors the value.
+            KeepScreenOn(enabled = keepScreenOn)
 
             val arViewModel: ARViewModel = viewModel(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {

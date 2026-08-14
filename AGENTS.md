@@ -56,8 +56,7 @@ human-in-the-loop steps inside the workflow:
 - `ui/location` is a **fully custom OSM tile renderer** (Compose Canvas) — `TileUrlProvider.kt`,
   `OpenStreetMapTileManager.kt`. The `org.mapsforge` deps in `app/build.gradle:108-111` are declared
   but unused; do not treat them as the map engine.
-- `PRD.md` is the tracked spec-of-record: it lists milestones (M) and hardening items (H1–H8) that are
-  marked implemented via `docs(prd):` commits. `specs/` is gitignored (local spec-driven workflow, see
+- `PRD.md` is a **local-only spec-of-record** (untracked via `.git/info/exclude`; kept out of git intentionally — milestones (M) and hardening items (H1–H8) live there, but the file itself is not version-controlled). `specs/` is gitignored (local spec-driven workflow, see
   `CLAUDE.md`). `docs/technical/Architecture.md` exists but is partially stale (references a renamed `QiblaViewModel`).
 
 ## Conventions & Testing

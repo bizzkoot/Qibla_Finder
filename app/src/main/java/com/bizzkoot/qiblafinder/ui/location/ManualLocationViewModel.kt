@@ -7,6 +7,7 @@ import com.bizzkoot.qiblafinder.model.LocationRepository
 import com.bizzkoot.qiblafinder.model.LocationState
 import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.ui.location.QiblaPerformanceOptimizer
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -318,7 +319,7 @@ class ManualLocationViewModel(
 
     fun onAngleMeasured(angle: Double) {
         _uiState.value = _uiState.value.copy(lastMeasuredAngle = angle)
-        Timber.d("📍 Angle measurement updated: ${String.format("%.2f", angle)}°")
+        Timber.d("📍 Angle measurement updated: ${String.format(Locale.US, "%.2f", angle)}°")
     }
 
     fun clearMeasurementAngle() {

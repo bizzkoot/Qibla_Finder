@@ -1,4 +1,5 @@
 package com.bizzkoot.qiblafinder.ui.troubleshooting
+import java.util.Locale
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
@@ -539,8 +540,8 @@ private fun formatBytes(bytes: Long): String {
     val mb = kb / 1024.0
     
     return when {
-        mb >= 1 -> String.format("%.1f MB", mb)
-        kb >= 1 -> String.format("%.1f KB", kb)
+        mb >= 1 -> String.format(Locale.US, "%.1f MB", mb)
+        kb >= 1 -> String.format(Locale.US, "%.1f KB", kb)
         else -> "$bytes B"
     }
 }

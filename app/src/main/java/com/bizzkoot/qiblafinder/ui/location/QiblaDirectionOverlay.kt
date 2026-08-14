@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.bizzkoot.qiblafinder.model.GeodesyUtils
 import com.bizzkoot.qiblafinder.model.GeodesyResult
 import com.bizzkoot.qiblafinder.model.MapLocation
+import java.util.Locale
 import timber.log.Timber
 import kotlin.math.*
 
@@ -1254,7 +1255,7 @@ class QiblaDirectionOverlay {
                         // Draw arrowhead
                         drawSimpleArrowHead(arrowTip, bearingRad, outlineColor)
                         
-                        Timber.d("📍 Simple Qibla arrow rendered: bearing=${String.format("%.1f", qiblaBearing)}°, length=${String.format("%.0f", optimalArrowLength)}px, from=${dropPinCenter}, to=${arrowTip}")
+                        Timber.d("📍 Simple Qibla arrow rendered: bearing=${String.format(Locale.US, "%.1f", qiblaBearing)}°, length=${String.format(Locale.US, "%.0f", optimalArrowLength)}px, from=${dropPinCenter}, to=${arrowTip}")
 
                         return SimpleQiblaArrowRenderResult(
                             start = dropPinCenter,

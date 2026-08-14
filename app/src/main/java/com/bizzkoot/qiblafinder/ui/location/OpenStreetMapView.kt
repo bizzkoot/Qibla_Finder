@@ -1,6 +1,5 @@
 package com.bizzkoot.qiblafinder.ui.location
 
-import android.graphics.Bitmap
 import android.graphics.PointF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -42,8 +41,10 @@ import androidx.compose.ui.graphics.Canvas as ComposeCanvas
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.scale
 import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
+import java.util.Locale
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -317,7 +318,7 @@ fun OpenStreetMapView(
             tileY = y
             onLocationSelected(target)
             onRecenterConsumed()
-            Timber.d("📍 Recenter applied to: ${String.format("%.6f", target.latitude)}, ${String.format("%.6f", target.longitude)}")
+            Timber.d("📍 Recenter applied to: ${String.format(Locale.US, "%.6f", target.latitude)}, ${String.format(Locale.US, "%.6f", target.longitude)}")
         }
     }
 
@@ -514,8 +515,8 @@ fun OpenStreetMapView(
         val isCurrentlyOutOfBounds = !hasEnoughTiles
         val shouldShowRefreshButton = isCurrentlyOutOfBounds && digitalZoom > 1.0
         
-        Timber.d("📍 Out-of-bounds check: digitalZoom=${String.format("%.1f", digitalZoom)}, " +
-                "tilesLoaded=$tilesLoaded/$tilesAvailable (${String.format("%.1f", loadedPercentage * 100)}%), " +
+        Timber.d("📍 Out-of-bounds check: digitalZoom=${String.format(Locale.US, "%.1f", digitalZoom)}, " +
+                "tilesLoaded=$tilesLoaded/$tilesAvailable (${String.format(Locale.US, "%.1f", loadedPercentage * 100)}%), " +
                 "outOfBounds=$isCurrentlyOutOfBounds, showRefresh=$shouldShowRefreshButton")
         
         // Update out-of-bounds state if changed
@@ -607,7 +608,7 @@ fun OpenStreetMapView(
                         )
                         
                         if (digitalZoom > 1.0) {
-                            Timber.d("📍 Drag started in digital zoom mode (${String.format("%.1f", digitalZoom)}x) at position: tileX=${String.format("%.3f", tileX)}, tileY=${String.format("%.3f", tileY)}")
+                            Timber.d("📍 Drag started in digital zoom mode (${String.format(Locale.US, "%.1f", digitalZoom)}x) at position: tileX=${String.format(Locale.US, "%.3f", tileX)}, tileY=${String.format(Locale.US, "%.3f", tileY)}")
                         }
                     },
                     onDrag = { change, dragAmount ->
@@ -658,7 +659,7 @@ fun OpenStreetMapView(
                         lastDragPosition = Pair(tileX, tileY)
                         
                         if (digitalZoom > 1.0) {
-                            Timber.d("📍 Drag ended in digital zoom mode (${String.format("%.1f", digitalZoom)}x) at final position: tileX=${String.format("%.3f", tileX)}, tileY=${String.format("%.3f", tileY)}")
+                            Timber.d("📍 Drag ended in digital zoom mode (${String.format(Locale.US, "%.1f", digitalZoom)}x) at final position: tileX=${String.format(Locale.US, "%.3f", tileX)}, tileY=${String.format(Locale.US, "%.3f", tileY)}")
                         }
                         
                         // Trigger progressive auto-refresh
@@ -745,7 +746,7 @@ fun OpenStreetMapView(
                     val scaleFactor = 0.75f
                     val scaledWidth = (bitmap.width * scaleFactor).roundToInt().coerceAtLeast(1)
                     val scaledHeight = (bitmap.height * scaleFactor).roundToInt().coerceAtLeast(1)
-                    bitmap = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+                    bitmap = bitmap.scale(scaledWidth, scaledHeight, true)
                     startOffset = Offset(startOffset.x * scaleFactor, startOffset.y * scaleFactor)
                     endOffset = Offset(endOffset.x * scaleFactor, endOffset.y * scaleFactor)
                     Timber.d("📍 Low-end snapshot downscaled to ${scaledWidth}x${scaledHeight}")
@@ -780,7 +781,7 @@ fun OpenStreetMapView(
                 )
             ) {
                 Text(
-                    text = "Digital Zoom ${String.format("%.1fx", digitalZoom)}",
+                    text = "Digital Zoom ${String.format(Locale.US, "%.1fx", digitalZoom)}",
                     modifier = Modifier.padding(8.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -805,7 +806,7 @@ fun OpenStreetMapView(
                     
                     // Gracefully return to normal zoom and last good position
                     outOfBoundsState.lastKnownGoodPosition?.let { (lastTileX, lastTileY) ->
-                        Timber.d("📍 Restoring position: tileX=${String.format("%.3f", lastTileX)}, tileY=${String.format("%.3f", lastTileY)}, zoom=${outOfBoundsState.lastKnownGoodZoom}")
+                        Timber.d("📍 Restoring position: tileX=${String.format(Locale.US, "%.3f", lastTileX)}, tileY=${String.format(Locale.US, "%.3f", lastTileY)}, zoom=${outOfBoundsState.lastKnownGoodZoom}")
                         
                         tileX = lastTileX
                         tileY = lastTileY
@@ -823,7 +824,7 @@ fun OpenStreetMapView(
                             showRefreshButton = false
                         )
                         
-                        Timber.i("📍 Successfully returned to last good position: lat=${String.format("%.6f", newLat)}, lng=${String.format("%.6f", newLng)}")
+                        Timber.i("📍 Successfully returned to last good position: lat=${String.format(Locale.US, "%.6f", newLat)}, lng=${String.format(Locale.US, "%.6f", newLng)}")
                     } ?: run {
                         // Fallback: just exit digital zoom if no last good position is available
                         Timber.w("📍 No last good position available - just exiting digital zoom")

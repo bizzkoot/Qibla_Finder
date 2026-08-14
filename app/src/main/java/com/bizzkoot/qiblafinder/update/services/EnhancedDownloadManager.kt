@@ -5,10 +5,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.os.Environment
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,7 +42,7 @@ class EnhancedDownloadManager(private val context: Context) {
             // Clean up any existing download receiver
             cleanup()
             
-            val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
+            val request = DownloadManager.Request(downloadUrl.toUri()).apply {
                 setTitle("Qibla Finder Update")
                 setDescription("Downloading version $versionName...")
                 // Use VISIBILITY_VISIBLE instead of VISIBILITY_VISIBLE_NOTIFY_COMPLETED
@@ -215,7 +215,7 @@ class EnhancedDownloadManager(private val context: Context) {
     fun installApk(fileUri: String) {
         try {
             Timber.d("installApk() called with fileUri: $fileUri")
-            val file = File(Uri.parse(fileUri).path ?: run {
+            val file = File(fileUri.toUri().path ?: run {
                 Timber.e("FileUri path is null: $fileUri")
                 _downloadState.value = DownloadState.Error("Invalid file URI")
                 return

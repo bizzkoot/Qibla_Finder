@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import android.graphics.Paint as AndroidPaint
 import android.graphics.Color as AndroidColor
+import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -346,7 +347,7 @@ fun AngleMeasurementOverlay(
                     shape = RoundedCornerShape(50)
                 ) {
                     Text(
-                        text = String.format("%.1fx", overlayScale),
+                        text = String.format(Locale.US, "%.1fx", overlayScale),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelSmall
                     )

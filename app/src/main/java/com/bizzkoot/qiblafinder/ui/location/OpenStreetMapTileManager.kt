@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.bizzkoot.qiblafinder.utils.CompressionUtils
 import com.bizzkoot.qiblafinder.utils.DeviceCapabilitiesDetector
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -531,8 +532,8 @@ class OpenStreetMapTileManager(
         val avgLoadTime = getAverageLoadTime()
         val cacheSize = getCacheSizeMB()
 
-        return "Cache: ${String.format("%.1f", cacheSize)}MB, " +
-               "Hit Rate: ${String.format("%.1f", hitRate)}%, " +
+        return "Cache: ${String.format(Locale.US, "%.1f", cacheSize)}MB, " +
+               "Hit Rate: ${String.format(Locale.US, "%.1f", hitRate)}%, " +
                "Avg Load: ${avgLoadTime}ms"
     }
 

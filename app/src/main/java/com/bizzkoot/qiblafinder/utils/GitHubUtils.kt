@@ -2,7 +2,7 @@ package com.bizzkoot.qiblafinder.utils
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import timber.log.Timber
 
 object GitHubUtils {
@@ -18,7 +18,7 @@ object GitHubUtils {
     
     fun openUrl(context: Context, url: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            val intent = Intent(Intent.ACTION_VIEW, url.toUri())
             context.startActivity(intent)
             Timber.i("Opened URL: $url")
         } catch (e: Exception) {

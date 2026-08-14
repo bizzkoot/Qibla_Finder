@@ -37,6 +37,7 @@ import androidx.compose.ui.res.painterResource
 import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 import com.bizzkoot.qiblafinder.R
+import java.util.Locale
 import timber.log.Timber
 
 /**
@@ -256,7 +257,7 @@ fun ManualLocationScreen(
                         uiState.selectedLocation?.let {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Selected: ${String.format("%.4f", it.latitude)}, ${String.format("%.4f", it.longitude)}",
+                                "Selected: ${String.format(Locale.US, "%.4f", it.latitude)}, ${String.format(Locale.US, "%.4f", it.longitude)}",
                                 style = typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -302,7 +303,7 @@ fun ManualLocationScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        "Qibla: ${String.format("%.1f", uiState.qiblaBearing)}°",
+                                        "Qibla: ${String.format(Locale.US, "%.1f", uiState.qiblaBearing)}°",
                                         style = typography.labelSmall,
                                         color = if (uiState.error != null) {
                                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
@@ -312,7 +313,7 @@ fun ManualLocationScreen(
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        "Distance: ${String.format("%.0f", uiState.distanceToKaaba)} km",
+                                        "Distance: ${String.format(Locale.US, "%.0f", uiState.distanceToKaaba)} km",
                                         style = typography.labelSmall,
                                         color = if (uiState.error != null) {
                                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
@@ -355,7 +356,7 @@ fun ManualLocationScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                "Cache: ${String.format("%.1f", uiState.cacheSizeMB)}MB / ${uiState.cacheLimitMb}MB",
+                                "Cache: ${String.format(Locale.US, "%.1f", uiState.cacheSizeMB)}MB / ${uiState.cacheLimitMb}MB",
                                 style = typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

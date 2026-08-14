@@ -2,6 +2,7 @@ package com.bizzkoot.qiblafinder.ui.location
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 
 data class ManualLocationCacheConfig(
     val limitMb: Int
@@ -19,7 +20,7 @@ class ManualLocationPreferences(context: Context) {
     }
 
     fun setLastMapType(mapType: MapType) {
-        prefs.edit().putString(KEY_LAST_MAP_TYPE, mapType.name).apply()
+        prefs.edit { putString(KEY_LAST_MAP_TYPE, mapType.name) }
     }
 
     fun getCacheConfig(): ManualLocationCacheConfig {
@@ -29,7 +30,7 @@ class ManualLocationPreferences(context: Context) {
 
     fun setCacheLimitMb(limitMb: Int) {
         val safeLimit = limitMb.coerceIn(MIN_CACHE_LIMIT_MB, MAX_CACHE_LIMIT_MB)
-        prefs.edit().putInt(KEY_CACHE_LIMIT_MB, safeLimit).apply()
+        prefs.edit { putInt(KEY_CACHE_LIMIT_MB, safeLimit) }
     }
 
     private companion object {

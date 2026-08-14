@@ -2,6 +2,7 @@ package com.bizzkoot.qiblafinder.update.repositories
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.bizzkoot.qiblafinder.update.models.UpdateInfo
 import com.bizzkoot.qiblafinder.update.services.VersionChecker
 import kotlinx.coroutines.flow.Flow
@@ -34,7 +35,7 @@ class UpdateNotificationRepository(
         }
         // Save the last check time unconditionally so the 24h rate limit engages even
         // when no update is available (previously it never did → API hit every launch).
-        prefs.edit().putLong("last_check_time", System.currentTimeMillis()).apply()
+        prefs.edit { putLong("last_check_time", System.currentTimeMillis()) }
 
         return updateInfo
     }
@@ -44,7 +45,7 @@ class UpdateNotificationRepository(
         _updateInfo.value = null
         // Mark this version as dismissed
         dismissedUpdateInfo?.let { updateInfo ->
-            prefs.edit().putString("dismissed_version", updateInfo.newVersion).apply()
+            prefs.edit { putString("dismissed_version", updateInfo.newVersion) }
         }
     }
 
@@ -62,6 +63,6 @@ class UpdateNotificationRepository(
     }
 
     fun clearDismissedVersion() {
-        prefs.edit().remove("dismissed_version").apply()
+        prefs.edit { remove("dismissed_version") }
     }
 }

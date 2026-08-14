@@ -40,6 +40,25 @@ jobs:
             echo "::notice::No [release] marker in HEAD commit - skipping release"
           fi
 
+      # PRD M15 concurrency guard: queued [release] runs (concurrency group
+      # cancel-in-progress: false) start only after the previous run fully
+      # finishes, but they check out their OWN pushed SHA, which predates the
+      # previous run's version-bump push. Without this sync, two queued runs
+      # compute the same next version from the same stale base and the second
+      # bump push is rejected (non-fast-forward) -> red CI + release delay.
+      # Resetting to origin/main re-bases the version computation on the TRUE
+      # latest main (which includes our own pushed commits plus any prior bump),
+      # so this run always bumps to a strictly-newer version and pushes
+      # fast-forward. The bump type is still derived from this push's commit
+      # range (github.event.before..after), which is unaffected by the sync.
+      - name: Sync with origin to defeat stale-base version races
+        if: steps.release_gate.outputs.RELEASE_REQUESTED == 'true'
+        run: |
+          git fetch origin main --tags
+          git reset --hard origin/main
+          CURRENT_VERSION=$(grep "versionName" app/build.gradle | sed 's/.*versionName "\(.*\)"/\1/')
+          echo "::notice::Synced to origin/main (current version: $CURRENT_VERSION)"
+
       - name: Determine version bump from full push range
         id: version_bump
         if: steps.release_gate.outputs.RELEASE_REQUESTED == 'true'

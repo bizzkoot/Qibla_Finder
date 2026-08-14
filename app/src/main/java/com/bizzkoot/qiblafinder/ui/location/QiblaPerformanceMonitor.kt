@@ -507,15 +507,12 @@ object QiblaPerformanceMonitor {
             MemoryRecoveryAction.EMERGENCY_STOP -> {
                 Timber.e("📍 Executing emergency stop due to critical memory pressure")
                 reset()
-                System.gc() // Force garbage collection as emergency measure
                 true
             }
             MemoryRecoveryAction.AGGRESSIVE_CLEANUP -> {
                 Timber.w("📍 Executing aggressive memory cleanup")
-                System.gc()
-                Thread.sleep(100) // Give GC time to work
-                val memoryAfterGc = monitorMemoryUsage()
-                Timber.d("📍 Memory after cleanup: ${memoryAfterGc.usedMemoryMB}MB")
+                val memoryAfterCleanup = monitorMemoryUsage()
+                Timber.d("📍 Memory after cleanup: ${memoryAfterCleanup.usedMemoryMB}MB")
                 true
             }
             MemoryRecoveryAction.THROTTLE_UPDATES -> {

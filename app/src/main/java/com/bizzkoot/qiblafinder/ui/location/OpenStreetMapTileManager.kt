@@ -619,9 +619,9 @@ class OpenStreetMapTileManager(
                     }
                 }
             }
-
-            // Force garbage collection
-            System.gc()
+            // Note: no System.gc() here — explicit GC on the main thread janks the
+            // UI and ART ignores it anyway; the cache eviction above is the real
+            // memory recovery.
             Timber.d("📍 Memory pressure handled - cache reduced")
         } catch (e: Exception) {
             Timber.e(e, "📍 Error handling memory pressure")

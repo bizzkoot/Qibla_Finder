@@ -1,5 +1,9 @@
 package com.bizzkoot.qiblafinder.ui.permissions
 
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -10,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.bizzkoot.qiblafinder.permissions.PermissionManager
 import com.bizzkoot.qiblafinder.permissions.PermissionState
 
@@ -20,6 +26,10 @@ fun PermissionScreen(
 ) {
     val context = LocalContext.current
     val permissionState by permissionManager.permissionState.collectAsState()
+    // PRD M8: once a required permission is denied twice (no rationale shown
+    // anymore), the in-app request can never succeed again — offer the system
+    // settings screen as the escape hatch.
+    var showOpenSettings by remember { mutableStateOf(false) }
     
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -29,6 +39,14 @@ fun PermissionScreen(
         // Check if all required permissions are granted
         if (permissionManager.hasRequiredPermissions()) {
             onPermissionsGranted()
+        } else {
+            // Permanently denied = denied AND the system will no longer show the
+            // rationale dialog (shouldShowRequestPermissionRationale == false).
+            val activity = context as? Activity
+            showOpenSettings = activity != null && permissionManager.getRequiredPermissions().any { permission ->
+                ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED &&
+                    !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+            }
         }
     }
     
@@ -102,6 +120,23 @@ fun PermissionScreen(
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.error
             )
+        }
+        
+        if (showOpenSettings) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            "package:${context.packageName}".toUri()
+                        )
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Open Settings")
+            }
         }
     }
 }

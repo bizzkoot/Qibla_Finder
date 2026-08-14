@@ -3,7 +3,7 @@
 > Version: 1.1 (post-critique corrections applied)
 > Date: 2025
 > Status: Draft — critique completed; corrections incorporated (see §6)
-> App: Qiblah Finder (Android, Kotlin + Jetpack Compose, v2.10.0 / versionCode 21000)
+> App: Qiblah Finder (Android, Kotlin + Jetpack Compose, v2.10.3 / versionCode 21003)
 
 ---
 
@@ -19,7 +19,7 @@ and fast/reliable/offline behavior.
 - The app is **distributed via GitHub Releases**, not the Play Store. This is why the
   app ships its own **self-update subsystem** (GitHub API → DownloadManager → FileProvider
   install) and an in-app update banner. It is also why `REQUEST_INSTALL_PACKAGES` exists.
-- Versioning is `versionCode 21000 / versionName 2.10.0` (build.gradle:14-15); the in-app
+- Versioning is `versionCode 21003 / versionName 2.10.3` (build.gradle:14-15); the in-app
   updater parses `vX.Y.Z` release tags, so tag/version drift silently breaks update detection.
   (v1.0 of this PRD itself shipped the wrong version string — corrected in v1.1.)
 - CI builds signed APKs from env-var secrets; keystore is not in the repo.

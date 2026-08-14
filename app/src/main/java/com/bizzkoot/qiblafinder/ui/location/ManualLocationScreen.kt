@@ -38,7 +38,6 @@ import com.bizzkoot.qiblafinder.model.MapLocation
 import com.bizzkoot.qiblafinder.ui.theme.QiblaTypography
 import com.bizzkoot.qiblafinder.R
 import timber.log.Timber
-import javax.inject.Inject
 
 /**
  * Composable function that measures the height of its content and reports it back

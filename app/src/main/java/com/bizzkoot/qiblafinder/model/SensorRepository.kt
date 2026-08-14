@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
-import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -191,6 +190,9 @@ sealed interface OrientationState {
         val phoneTiltAngle: Float = 0f,
         val shouldShowCalibration: Boolean = false
     ) : OrientationState
+    // Emitted when the required sensor is missing or registration fails, so the UI
+    // can surface a retry instead of showing "Initializing..." forever (PRD M8).
+    object Error : OrientationState
 }
 
 enum class CompassStatus {
@@ -204,7 +206,7 @@ private enum class OrientationMode {
     KALMAN_FUSION
 }
 
-class SensorRepository @Inject constructor(
+class SensorRepository constructor(
     private val context: Context,
     private val locationRepository: LocationRepository,
     private val analytics: CompassAnalytics = CompassAnalytics.NO_OP,
@@ -505,7 +507,7 @@ class SensorRepository @Inject constructor(
 
         if (orientationMode == OrientationMode.ROTATION_VECTOR && rotationVectorSensor == null) {
             Timber.e("❌ Rotation Vector Sensor not available.")
-            trySend(OrientationState.Initializing)
+            trySend(OrientationState.Error)
             awaitClose()
             return
         }
@@ -535,6 +537,7 @@ class SensorRepository @Inject constructor(
 
                 if (!rotationRegistered) {
                     Timber.e("❌ Failed to register rotation vector sensor at fallback rate")
+                    trySend(OrientationState.Error)
                     sensorThread.quitSafely()
                     locationJob.cancel()
                     close(IllegalStateException("Rotation vector sensor registration failed"))

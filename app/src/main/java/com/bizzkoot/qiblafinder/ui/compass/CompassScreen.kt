@@ -147,11 +147,13 @@ fun CompassScreen(
                 val isAligned = qiblaBearing?.let { qibla ->
                     val deviceRotation = when (val oState = orientationState) {
                         is OrientationState.Initializing -> 0f
+                        is OrientationState.Error -> 0f
                         is OrientationState.Available -> oState.trueHeading
                     }
                     val difference = angleDiff(deviceRotation, qibla)
                     val isPhoneUpright = when (val oState = orientationState) {
                         is OrientationState.Initializing -> false
+                        is OrientationState.Error -> false
                         is OrientationState.Available -> oState.isPhoneUpright
                     }
                     // The arrow only counts as "aligned" while the phone is actually
@@ -264,6 +266,34 @@ fun CompassScreen(
                             }
                         }
                     }
+                    is OrientationState.Error -> {
+                        // PRD M8: the sensor stream failed (rotation-vector sensor
+                        // absent or registration failure). Offer a Retry instead of
+                        // leaving the user staring at "Initializing..." forever.
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text(
+                                text = "⚠️ Compass sensor unavailable",
+                                style = typography.bodyPrimary,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "The orientation sensor could not be started. Retry to attempt reconnecting.",
+                                style = typography.bodySecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(onClick = { viewModel.retrySensors() }) {
+                                Text("Retry Sensors")
+                            }
+                        }
+                    }
                     else -> {
                         Text(
                             text = "Initializing compass...",
@@ -277,7 +307,8 @@ fun CompassScreen(
             // Location and distance info
             LocationInfo(
                 locationState = locationState,
-                distanceToKaaba = distanceToKaaba
+                distanceToKaaba = distanceToKaaba,
+                onRetryLocation = viewModel::retryLocation
             )
 
             // Action buttons
@@ -413,6 +444,7 @@ fun StatusBar(
         // Compass status
         val compassText = when (orientationState) {
             is OrientationState.Initializing -> "🔄 Initializing..."
+            is OrientationState.Error -> "⚠️ Sensor Unavailable"
             is OrientationState.Available -> {
                 when (orientationState.compassStatus) {
                     CompassStatus.OK -> if (isSunCalibrated) "✅ Sun Calibrated" else "✅ Calibrated"
@@ -704,7 +736,8 @@ fun CompassGraphic(
 @Composable
 fun LocationInfo(
     locationState: LocationState,
-    distanceToKaaba: String
+    distanceToKaaba: String,
+    onRetryLocation: () -> Unit = {}
 ) {
     val typography = QiblaTypography.current
     Column(
@@ -790,6 +823,12 @@ fun LocationInfo(
             }
             is LocationState.Error -> {
                 Text("Location Error: ${locationState.message}")
+                Spacer(modifier = Modifier.height(8.dp))
+                // PRD M8: GPS can fail transiently (no fix / timeout); a Retry
+                // re-requests updates instead of leaving a dead-end error state.
+                Button(onClick = onRetryLocation) {
+                    Text("Retry Location")
+                }
             }
             is LocationState.PermissionDenied -> {
                 Text("Location permission denied. Please grant location permission in settings.")

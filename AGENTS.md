@@ -40,7 +40,7 @@ human-in-the-loop steps inside the workflow:
   the in-app updater won't see the release (draft assets 404 publicly).
 - `./gradlew test` and `./gradlew lintDebug` run before `assembleRelease`; if either fails the job
   fails and no release is created.
-- `versionCode` must equal `major*10000 + minor*100 + patch` (currently `21002` / `"2.10.2"`).
+- `versionCode` must equal `major*10000 + minor*100 + patch` (currently `21003` / `"2.10.3"`).
   The in-app updater parses `vX.Y.Z` release tags, so versionName/tag drift silently breaks update detection.
 - `assembleRelease` requires `app/qiblafinder-release-key.jks` (gitignored; recreated in CI from
   `SIGNING_KEY_BASE64`) plus env vars `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Locally it

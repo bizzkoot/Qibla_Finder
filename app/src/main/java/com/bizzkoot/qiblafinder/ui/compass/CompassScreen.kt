@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.offset
 import com.bizzkoot.qiblafinder.model.CompassStatus
 import timber.log.Timber
 import com.bizzkoot.qiblafinder.model.LocationAccuracy
@@ -165,6 +166,15 @@ fun CompassScreen(
                     orientationState = orientationState,
                     qiblaBearing = qiblaBearing,
                     isAligned = isAligned
+                )
+
+                // Compact bubble level below the compass center: it remains visible
+                // without covering the Qibla arrow and gives an immediate flatness
+                // cue while the phone is being placed on the ground.
+                WaterLevelIndicator(
+                    levelX = (orientationState as? OrientationState.Available)?.levelX ?: 0f,
+                    levelY = (orientationState as? OrientationState.Available)?.levelY ?: 0f,
+                    modifier = Modifier.align(Alignment.Center).offset(y = 168.dp)
                 )
                 
                 // Show red alert when the phone is NOT flat (held upright/vertical).

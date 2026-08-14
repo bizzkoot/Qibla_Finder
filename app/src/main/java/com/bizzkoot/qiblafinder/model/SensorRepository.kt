@@ -188,6 +188,10 @@ sealed interface OrientationState {
         val isPhoneUpright: Boolean = true,
         val isPhoneVertical: Boolean = false,
         val phoneTiltAngle: Float = 0f,
+        // Normalized gravity on the screen plane. Zero/zero means level; these
+        // values drive the small bubble-level UI without needing another sensor.
+        val levelX: Float = 0f,
+        val levelY: Float = 0f,
         val shouldShowCalibration: Boolean = false
     ) : OrientationState
     // Emitted when the required sensor is missing or registration fails, so the UI
@@ -241,6 +245,8 @@ class SensorRepository constructor(
     private var isPhoneUpright: Boolean = true
     private var isPhoneVertical: Boolean = false
     private var phoneTiltAngle: Float = 0f
+    private var levelX: Float = 0f
+    private var levelY: Float = 0f
     private val accelerometerReading = FloatArray(3)
     private val magnetometerReading = FloatArray(3)
     private var hasAccelerometerSample = false
@@ -384,6 +390,8 @@ class SensorRepository constructor(
                 isPhoneUpright = isPhoneUpright,
                 isPhoneVertical = isPhoneVertical,
                 phoneTiltAngle = phoneTiltAngle,
+                levelX = levelX,
+                levelY = levelY,
                 shouldShowCalibration = calibrationVisible
             )
             _orientationState.value = newState
@@ -443,6 +451,8 @@ class SensorRepository constructor(
                             isPhoneUpright = isPhoneUpright,
                             isPhoneVertical = isPhoneVertical,
                             phoneTiltAngle = phoneTiltAngle,
+                            levelX = levelX,
+                            levelY = levelY,
                             shouldShowCalibration = calibrationVisible
                         )
                         _orientationState.value = newState
@@ -720,6 +730,15 @@ class SensorRepository constructor(
         val tiltAngle = tiltAngleFromAccelerometer(x, y, z)
 
         phoneTiltAngle = tiltAngle
+
+        // Accelerometer gravity projected onto the display plane. Keeping the
+        // vector normalized makes the UI scale consistent across devices and
+        // sensor units (m/s² vs. g). A flat phone produces (0, 0).
+        val magnitude = sqrt(x * x + y * y + z * z).coerceAtLeast(0.001f)
+        val normalizedLevelX = (x / magnitude).coerceIn(-1f, 1f)
+        val normalizedLevelY = (y / magnitude).coerceIn(-1f, 1f)
+        levelX = normalizedLevelX
+        levelY = normalizedLevelY
 
         // Vertical is when tilt is close to 0° or 180° (within 10 degrees - more strict)
         val wasUpright = isPhoneUpright

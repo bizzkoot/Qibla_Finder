@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -39,6 +40,7 @@ import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MAX_DEGREES
 import com.bizzkoot.qiblafinder.model.NOT_FLAT_TILT_MIN_DEGREES
 import com.bizzkoot.qiblafinder.ui.ar.ARErrorScreen
 import com.bizzkoot.qiblafinder.ui.ar.ARErrorType
+import com.bizzkoot.qiblafinder.ui.compass.WaterLevelIndicator
 import com.google.ar.sceneform.ArSceneView
 import timber.log.Timber
 
@@ -151,6 +153,8 @@ fun ARView(
     val isAligned by viewModel.isAligned.collectAsState()
     val phoneTiltAngle by viewModel.phoneTiltAngle.collectAsState()
     val isPhoneUpright by viewModel.isPhoneUpright.collectAsState()
+    val levelX by viewModel.levelX.collectAsState()
+    val levelY by viewModel.levelY.collectAsState()
     
     Box(modifier = Modifier.fillMaxSize()) {
         // Camera Preview Background
@@ -185,6 +189,8 @@ fun ARView(
             isAligned = isAligned,
             phoneTiltAngle = phoneTiltAngle,
             isPhoneUpright = isPhoneUpright,
+            levelX = levelX,
+            levelY = levelY,
             onNavigateBack = onNavigateBack
         )
         
@@ -254,6 +260,8 @@ fun QiblaDirectionOverlay(
     isAligned: Boolean,
     phoneTiltAngle: Float,
     isPhoneUpright: Boolean,
+    levelX: Float,
+    levelY: Float,
     onNavigateBack: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -406,6 +414,14 @@ fun QiblaDirectionOverlay(
             }
         }
         
+        // Compact level cue below the AR direction card. It uses the same
+        // sensor-backed flatness model as the compass screen.
+        WaterLevelIndicator(
+            levelX = levelX,
+            levelY = levelY,
+            modifier = Modifier.align(Alignment.Center).offset(y = 126.dp)
+        )
+
         // Bottom Instructions
         Card(
             modifier = Modifier

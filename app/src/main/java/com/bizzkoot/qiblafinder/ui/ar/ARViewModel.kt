@@ -53,6 +53,12 @@ class ARViewModel(
     private val _isPhoneUpright = MutableStateFlow(true)
     val isPhoneUpright = _isPhoneUpright.asStateFlow()
 
+    private val _levelX = MutableStateFlow(0f)
+    val levelX = _levelX.asStateFlow()
+
+    private val _levelY = MutableStateFlow(0f)
+    val levelY = _levelY.asStateFlow()
+
     // W3: lifecycle gate for the sensor stream, mirroring CompassViewModel.screenVisible.
     // ARScreen drives it on ON_PAUSE/ON_RESUME (seeded from the current lifecycle state)
     // so backgrounding the app on the AR route stops the accelerometer/magnetometer/
@@ -104,6 +110,8 @@ class ARViewModel(
                                 _qiblaDirection.value = directionDifference.toFloat()
                                 _phoneTiltAngle.value = orientationState.phoneTiltAngle
                                 _isPhoneUpright.value = orientationState.isPhoneUpright
+                                _levelX.value = orientationState.levelX
+                                _levelY.value = orientationState.levelY
                                 
                                 // Debug upright detection
                                 Timber.d("📱 AR Flat Detection - Tilt: ${orientationState.phoneTiltAngle}°, Upright: ${orientationState.isPhoneUpright}, Vertical: ${orientationState.isPhoneVertical}")

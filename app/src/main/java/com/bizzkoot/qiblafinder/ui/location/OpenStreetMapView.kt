@@ -136,33 +136,40 @@ private fun DrawScope.renderMapScene(
 
         val canvasCenter = Offset(size.width / 2f, size.height / 2f)
 
-        tileStateCache.forEach { (cacheKey, state) ->
-            val tile = parseTileCacheKey(cacheKey)
-            if (tile != null && tile.mapType == mapType) {
-                val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE.toFloat() - tileOffsetX + canvasCenter.x
-                val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE.toFloat() - tileOffsetY + canvasCenter.y
+        // PRD M5: draw only the tiles that intersect the current viewport. Iterating the
+        // whole (previously unbounded) cache every frame was the map's biggest perf risk;
+        // off-viewport entries are skipped entirely. Digital zoom shrinks the visible
+        // region, so the viewport is divided by the zoom factor.
+        val drawViewportWidth = (size.width / digitalZoom).toInt().coerceAtLeast(1)
+        val drawViewportHeight = (size.height / digitalZoom).toInt().coerceAtLeast(1)
+        val visibleKeys = visibleTileKeys(tileX, tileY, zoom, drawViewportWidth, drawViewportHeight, mapType)
+        for (cacheKey in visibleKeys) {
+            val state = tileStateCache[cacheKey] ?: continue
+            val tile = parseTileCacheKey(cacheKey) ?: continue
+            if (tile.mapType != mapType) continue
+            val drawX = (tile.x - floor(tileX)).toFloat() * TILE_SIZE.toFloat() - tileOffsetX + canvasCenter.x
+            val drawY = (tile.y - floor(tileY)).toFloat() * TILE_SIZE.toFloat() - tileOffsetY + canvasCenter.y
 
-                when (state) {
-                    is TileLoadState.Loading -> {
-                        drawRect(
-                            color = Color.LightGray,
-                            topLeft = Offset(drawX, drawY),
-                            size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
-                        )
-                    }
-                    is TileLoadState.LowRes -> {
-                        drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
-                    }
-                    is TileLoadState.HighRes -> {
-                        drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
-                    }
-                    is TileLoadState.Failed -> {
-                        drawRect(
-                            color = Color.Gray,
-                            topLeft = Offset(drawX, drawY),
-                            size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
-                        )
-                    }
+            when (state) {
+                is TileLoadState.Loading -> {
+                    drawRect(
+                        color = Color.LightGray,
+                        topLeft = Offset(drawX, drawY),
+                        size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
+                    )
+                }
+                is TileLoadState.LowRes -> {
+                    drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+                }
+                is TileLoadState.HighRes -> {
+                    drawImage(state.bitmap.asImageBitmap(), topLeft = Offset(drawX, drawY))
+                }
+                is TileLoadState.Failed -> {
+                    drawRect(
+                        color = Color.Gray,
+                        topLeft = Offset(drawX, drawY),
+                        size = androidx.compose.ui.geometry.Size(TILE_SIZE.toFloat(), TILE_SIZE.toFloat())
+                    )
                 }
             }
         }
@@ -419,12 +426,31 @@ fun OpenStreetMapView(
             )
         }
 
+        // Real canvas size once measured; falls back to the 800x800 viewport used for
+        // tile loading before the canvas reports a size. Digital zoom shrinks the
+        // on-screen region, so the pruning viewport is divided by the zoom factor.
+        val cacheViewportWidth = if (canvasSize == IntSize.Zero) 800 else canvasSize.width
+        val cacheViewportHeight = if (canvasSize == IntSize.Zero) 800 else canvasSize.height
+        val cacheViewportWidthForZoom = (cacheViewportWidth / digitalZoom).toInt().coerceAtLeast(1)
+        val cacheViewportHeightForZoom = (cacheViewportHeight / digitalZoom).toInt().coerceAtLeast(1)
+
         allTiles.forEach { tile ->
             val cacheKey = tile.toCacheKey()
             if (tileStateCache[cacheKey] !is TileLoadState.HighRes) {
                 launch {
                     tileManager.loadTileProgressively(tile).collect { state ->
-                        tileStateCache = tileStateCache + (cacheKey to state)
+                        // PRD M5: keep the in-memory cache bounded — hard cap plus a prune
+                        // to tiles near the current viewport. Evicted tiles simply re-load
+                        // from the on-disk LRU cache when revisited.
+                        val visible = visibleTileKeys(
+                            tileX, tileY, zoom,
+                            cacheViewportWidthForZoom, cacheViewportHeightForZoom, mapType
+                        )
+                        tileStateCache = pruneToViewport(
+                            putTileState(tileStateCache, cacheKey, state, visible),
+                            tileX, tileY, zoom,
+                            cacheViewportWidthForZoom, cacheViewportHeightForZoom, mapType
+                        )
                     }
                 }
             }
@@ -890,7 +916,7 @@ fun OpenStreetMapView(
     }
 }
 
-private fun parseTileCacheKey(key: String): TileCoordinate? {
+internal fun parseTileCacheKey(key: String): TileCoordinate? {
     return try {
         val parts = key.split("_")
         when (parts.size) {
@@ -915,7 +941,7 @@ private fun parseTileCacheKey(key: String): TileCoordinate? {
     }
 }
 
-private fun getAccuracyForZoom(zoom: Int): Int {
+internal fun getAccuracyForZoom(zoom: Int): Int {
     return when {
         zoom >= 18 -> 5
         zoom >= 17 -> 10
@@ -929,7 +955,7 @@ private fun getAccuracyForZoom(zoom: Int): Int {
     }
 }
 
-private fun getAccuracyForZoomWithDigitalZoom(zoom: Int, digitalZoom: Double): Int {
+internal fun getAccuracyForZoomWithDigitalZoom(zoom: Int, digitalZoom: Double): Int {
     val baseAccuracy = getAccuracyForZoom(zoom)
     return (baseAccuracy / digitalZoom).toInt().coerceAtLeast(1)
 }
@@ -977,14 +1003,14 @@ private fun calculateViewportBounds(
 /**
  * Converts tile X coordinate to longitude
  */
-private fun tileXToLongitude(tileX: Double, zoom: Int): Double {
+internal fun tileXToLongitude(tileX: Double, zoom: Int): Double {
     return tileX / (1 shl zoom).toDouble() * 360.0 - 180.0
 }
 
 /**
  * Converts tile Y coordinate to latitude
  */
-private fun tileYToLatitude(tileY: Double, zoom: Int): Double {
+internal fun tileYToLatitude(tileY: Double, zoom: Int): Double {
     val n = PI - 2.0 * PI * tileY / (1 shl zoom).toDouble()
     return 180.0 / PI * atan(0.5 * (exp(n) - exp(-n)))
 }

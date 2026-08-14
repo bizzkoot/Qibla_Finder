@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -36,8 +37,11 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.bizzkoot.qiblafinder.sunCalibration.SunCalibrationUiState
+import com.bizzkoot.qiblafinder.sunCalibration.SunPositionViewModel
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
@@ -46,10 +50,38 @@ import kotlin.math.sin
 fun SunCalibrationScreen(
     uiState: SunCalibrationUiState,
     onCalibrate: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: SunPositionViewModel
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalContext.current as? LifecycleOwner
+
+    // Lifecycle gate: pause the GPS-backed sun position stream whenever this screen is
+    // no longer RESUMED (another destination covers it, or the app backgrounded). Inside
+    // a NavHost, LocalLifecycleOwner is the NavBackStackEntry lifecycle, which drops to
+    // STARTED (ON_PAUSE) as soon as another destination covers this one and returns to
+    // RESUMED (ON_RESUME) when the user comes back.
+    val composeLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(composeLifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onScreenVisible(true)
+                Lifecycle.Event.ON_PAUSE -> viewModel.onScreenVisible(false)
+                else -> Unit
+            }
+        }
+        composeLifecycleOwner.lifecycle.addObserver(observer)
+        // Seed screenVisible from the CURRENT lifecycle state: the observer only fires on
+        // transitions after registration, so a route restored onto the back stack
+        // (process-death) would otherwise stay "visible=true" with GPS running while
+        // covered by another route.
+        viewModel.onScreenVisible(
+            composeLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        )
+        onDispose {
+            composeLifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // Camera is optional app-wide (the compass works without it) — request it lazily here.
     var hasCameraPermission by remember {

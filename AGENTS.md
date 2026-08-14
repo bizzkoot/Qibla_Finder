@@ -23,6 +23,11 @@ to `main` whose HEAD commit message contains the literal string `[release]`. Any
 (including plain `chore: bump...` commits) runs the workflow and exits green without releasing.
 The old `pull_request` trigger was removed.
 
+**Ordering invariant**: tests, lint, and `assembleRelease` run **before** the version-bump commit
+and tag are pushed, so a failing build can never leave an orphaned version bump on `main`.
+`android.yml` no longer owns releasing; `release-drafter.yml` is the only release path and it
+always creates **draft** releases.
+
 When `[release]` is present, the workflow still auto-bumps, tags, builds, and drafts — no
 human-in-the-loop steps inside the workflow:
 - `feat`/`feature`/`enhancement` → minor bump; `fix`/`bug`/`patch` or any other commit → patch;
@@ -59,6 +64,7 @@ human-in-the-loop steps inside the workflow:
 - Kotlin, 2-space indentation; idiomatic style. Conventional Commits are required (see
   `docs/development/COMMIT_CONVENTIONS.md`).
 - Unit tests: JUnit4 in `app/src/test/java`, mirroring `model/` and `ui/compass/`. Robolectric +
-  Mockito available. Domain math (`GeodesyUtils`, compass filtering) is well covered; `ui/location`,
-  `update/`, and `sunCalibration/` currently have no tests.
+  Mockito available. Domain math (`GeodesyUtils`, compass filtering) is well covered; `ui/location`
+  and `update/` currently have no tests, while `sunCalibration/` (calibration math + lifecycle
+  gating) and location-repository GPS gating are now covered.
 - CI runs `./gradlew test`; `connectedAndroidTest` is `continue-on-error` (no device in CI).

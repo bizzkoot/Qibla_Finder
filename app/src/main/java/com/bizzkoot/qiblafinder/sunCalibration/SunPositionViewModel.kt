@@ -3,9 +3,12 @@ package com.bizzkoot.qiblafinder.sunCalibration
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bizzkoot.qiblafinder.model.LocationRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import java.util.*
 
@@ -13,6 +16,7 @@ import java.util.*
  * ViewModel for preparing sun position data for the UI.
  * Handles the state of sun position calculations and provides data to the UI.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class SunPositionViewModel(
     locationRepository: LocationRepository
 ) : ViewModel() {
@@ -21,6 +25,13 @@ class SunPositionViewModel(
     
     private val _uiState = MutableStateFlow<SunPositionUiState>(SunPositionUiState.Loading)
     val uiState: StateFlow<SunPositionUiState> = _uiState
+
+    // Lifecycle gate for the GPS-backed sun position stream: SunCalibrationScreen sets
+    // this to false whenever this route is not RESUMED (covered by another destination
+    // or the app backgrounded), so the getSunPosition() collection is cancelled and the
+    // LocationRepository refcount releases the shared GPS callback. Defaults to true
+    // because the ViewModel is created while this screen is the active destination.
+    private val screenVisible = MutableStateFlow(true)
     
     init {
         observeSunPosition()
@@ -31,7 +42,13 @@ class SunPositionViewModel(
      */
     private fun observeSunPosition() {
         viewModelScope.launch {
-            sunPositionRepository.getSunPosition()
+            screenVisible.flatMapLatest { visible ->
+                if (visible) {
+                    sunPositionRepository.getSunPosition()
+                } else {
+                    emptyFlow()
+                }
+            }
                 .catch { exception ->
                     _uiState.value = SunPositionUiState.Error("Failed to calculate sun position: ${exception.message}")
                 }
@@ -47,6 +64,14 @@ class SunPositionViewModel(
                     }
                 }
         }
+    }
+
+    /**
+     * Called by SunCalibrationScreen when its lifecycle transitions to/from RESUMED.
+     * While false, the GPS-backed sun position collection is gated off.
+     */
+    fun onScreenVisible(visible: Boolean) {
+        screenVisible.value = visible
     }
     
     /**

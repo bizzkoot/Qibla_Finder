@@ -51,7 +51,6 @@ Qiblah_Finder/
 │   └── test-release-system.sh
 ├── 📁 .github/                       # GitHub workflows and configs
 │   ├── 📁 workflows/
-│   └── release-drafter.yml
 ├── 📁 app/                           # Main application code
 │   ├── 📁 src/
 │   ├── build.gradle

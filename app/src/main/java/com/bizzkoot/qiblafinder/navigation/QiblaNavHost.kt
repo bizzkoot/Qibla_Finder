@@ -145,7 +145,8 @@ fun QiblaNavHost(
             SunCalibrationScreen(
                 uiState = sunCalibrationViewModel.uiState.collectAsState().value,
                 onCalibrate = { sunCalibrationViewModel.performCalibration() },
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = sunPositionViewModel
             )
         }
 

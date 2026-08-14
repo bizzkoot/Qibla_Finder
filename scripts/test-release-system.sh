@@ -51,10 +51,9 @@ echo "----------------------------"
 
 # Check essential files
 check_file ".github/workflows/release-drafter.yml"
-check_file ".github/release-drafter.yml"
 check_file "app/build.gradle"
-check_file "COMMIT_CONVENTIONS.md"
-check_file "RELEASE_GUIDE.md"
+check_file "docs/development/COMMIT_CONVENTIONS.md"
+check_file "docs/guides/RELEASE_GUIDE.md"
 
 echo ""
 echo "🔧 Checking workflow configuration..."
@@ -81,20 +80,20 @@ echo "📋 Checking documentation..."
 echo "---------------------------"
 
 # Check documentation content
-check_content "COMMIT_CONVENTIONS.md" "feat\|feature\|enhancement"
-check_content "COMMIT_CONVENTIONS.md" "fix\|bug\|patch"
-check_content "COMMIT_CONVENTIONS.md" "breaking\|major"
-check_content "RELEASE_GUIDE.md" "Automated Release System"
+check_content "docs/development/COMMIT_CONVENTIONS.md" "feat\|feature\|enhancement"
+check_content "docs/development/COMMIT_CONVENTIONS.md" "fix\|bug\|patch"
+check_content "docs/development/COMMIT_CONVENTIONS.md" "breaking\|major"
+check_content "docs/guides/RELEASE_GUIDE.md" "Automated Release System"
 
 echo ""
 echo "🔐 Checking GitHub secrets requirements..."
 echo "----------------------------------------"
 
 # Check if secrets are mentioned in documentation
-check_content "RELEASE_GUIDE.md" "SIGNING_KEY_BASE64"
-check_content "RELEASE_GUIDE.md" "KEYSTORE_PASSWORD"
-check_content "RELEASE_GUIDE.md" "KEY_ALIAS"
-check_content "RELEASE_GUIDE.md" "KEY_PASSWORD"
+check_content "docs/guides/RELEASE_GUIDE.md" "SIGNING_KEY_BASE64"
+check_content "docs/guides/RELEASE_GUIDE.md" "KEYSTORE_PASSWORD"
+check_content "docs/guides/RELEASE_GUIDE.md" "KEY_ALIAS"
+check_content "docs/guides/RELEASE_GUIDE.md" "KEY_PASSWORD"
 
 echo ""
 echo "🎯 Testing version bump logic..."
@@ -131,8 +130,7 @@ echo "-------------"
 
 echo -e "${YELLOW}Release System Status:${NC}"
 echo "• Workflow: .github/workflows/release-drafter.yml"
-echo "• Configuration: .github/release-drafter.yml"
-echo "• Documentation: COMMIT_CONVENTIONS.md, RELEASE_GUIDE.md"
+echo "• Documentation: docs/development/COMMIT_CONVENTIONS.md, docs/guides/RELEASE_GUIDE.md"
 echo "• Current Version: $CURRENT_VERSION"
 echo ""
 echo -e "${GREEN}✅ System appears to be properly configured!${NC}"

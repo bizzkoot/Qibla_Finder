@@ -17,7 +17,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicInteger
 
 sealed interface LocationState {
     object Loading : LocationState
@@ -61,6 +64,13 @@ class LocationRepository(private val context: Context) {
     val locationState: Flow<LocationState> = _locationState.asStateFlow()
     
     private var locationCallback: LocationCallback? = null
+
+    // Tracks how many collectors are subscribed to the shared location flow so the
+    // GPS callback is released when the LAST collector ends (covered screens / app
+    // backgrounded). Register-on-call semantics are preserved: startLocationUpdates()
+    // still runs when getLocation() is called, and stopLocationUpdates() fires only
+    // when the last collector is cancelled/completes.
+    private val activeCollectors = AtomicInteger(0)
 
     // Single source of truth for manual-location mode (PRD M4): the repository owns
     // the manual-location state so consumers (CompassViewModel, ManualLocationViewModel)
@@ -140,6 +150,14 @@ class LocationRepository(private val context: Context) {
             startLocationUpdates()
         }
         return locationState
+            .onStart { activeCollectors.incrementAndGet() }
+            .onCompletion {
+                // Release the shared GPS callback when the last collector ends so the
+                // device stops fixing location while nothing is consuming it.
+                if (activeCollectors.decrementAndGet() == 0) {
+                    stopLocationUpdates()
+                }
+            }
     }
     
     private fun hasLocationPermission(): Boolean {

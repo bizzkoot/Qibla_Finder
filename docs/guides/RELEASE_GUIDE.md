@@ -15,7 +15,7 @@ git push origin main
 ```
 
 ### 2. **Automated Process Triggers**
-- **Trigger**: Push to `main` branch
+- **Trigger**: Push to `main` whose HEAD commit message contains the literal string `[release]` (any other push runs the workflow and exits green without releasing)
 - **Workflow**: `.github/workflows/release-drafter.yml`
 - **Analysis**: Reads commit message for keywords
 - **Version Bump**: Determines version change (major/minor/patch)
@@ -31,17 +31,24 @@ git push origin main
 - **Pushes**: Tag to repository
 - **Ensures**: Tag exists before release creation
 
-### 5. **APK Building**
+### 5. **Testing & APK Building**
 - **Sets up**: JDK 17 environment
+- **Runs**: `./gradlew test` and `./gradlew lintDebug`
 - **Creates**: Keystore from GitHub secrets
 - **Builds**: Signed release APK
 - **Outputs**: `app/build/outputs/apk/release/app-release.apk`
 
+> **Ordering invariant**: tests, lint, and the signed APK build all run **before** the
+> version-bump commit and tag are pushed to `main`, so a failing build can never leave
+> an orphaned version bump or a tag with no release behind it.
+
 ### 6. **Release Creation**
-- **Creates**: GitHub release with tag
-- **Attaches**: Signed APK to release
+- **Commits**: Version bump to `main` (after the build succeeded)
+- **Creates**: Git tag (e.g., `v1.1.0`) and pushes it
+- **Creates**: GitHub **DRAFT** release with the signed APK attached
 - **Generates**: Release notes automatically
-- **Publishes**: Release (not draft)
+- **Publishes**: **Draft** release — a human must publish it on GitHub; the in-app
+  updater ignores drafts (they 404 publicly) until published
 
 ## 📋 Step-by-Step Instructions
 
@@ -99,15 +106,11 @@ git push origin main
 ## 🔧 Configuration Files
 
 ### 1. **Workflow File**: `.github/workflows/release-drafter.yml`
-- **Purpose**: Main automation workflow
-- **Triggers**: Push to main, PR events
-- **Actions**: Version bumping, tag creation, APK building, release creation
+- **Purpose**: Main automation workflow (the only release path)
+- **Triggers**: Push to main with a `[release]` marker in the HEAD commit message
+- **Actions**: Version bumping, APK building (after tests/lint), tag creation, draft release creation
 
-### 2. **Release Drafter Config**: `.github/release-drafter.yml`
-- **Purpose**: Release notes configuration
-- **Features**: Categories, templates, formatting
-
-### 3. **Build Configuration**: `app/build.gradle`
+### 2. **Build Configuration**: `app/build.gradle`
 - **Purpose**: Version source of truth
 - **Fields**: `versionName`, `versionCode`
 - **Auto-updated**: By workflow

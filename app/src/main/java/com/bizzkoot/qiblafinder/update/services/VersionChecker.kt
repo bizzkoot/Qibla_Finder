@@ -43,16 +43,25 @@ class VersionChecker(
         @Suppress("DEPRECATION")
         val currentVersionCode = currentVersion.versionCode
         val latestVersionCode = latestRelease.versionCode
-        
-        Timber.d("Version comparison: current=$currentVersionCode (${currentVersion.versionName}) vs latest=$latestVersionCode (${latestRelease.versionName})")
-        
+
+        return isNewerVersion(currentVersionCode, latestVersionCode)
+    }
+
+    /**
+     * Testable version-gating seam (PRD M10): a release is newer iff its versionCode is
+     * strictly greater than the installed app's. Extracted from the PackageInfo-based
+     * overload so the previously-untested update/ package can pin the update logic.
+     */
+    internal fun isNewerVersion(currentVersionCode: Int, latestVersionCode: Int): Boolean {
+        Timber.d("Version comparison: current=$currentVersionCode vs latest=$latestVersionCode")
+
         val isNewer = latestVersionCode > currentVersionCode
         if (isNewer) {
-            Timber.d("New version detected: ${latestRelease.versionName} (code: $latestVersionCode) > ${currentVersion.versionName} (code: $currentVersionCode)")
+            Timber.d("New version detected: $latestVersionCode > $currentVersionCode")
         } else {
-            Timber.d("No new version: ${latestRelease.versionName} (code: $latestVersionCode) <= ${currentVersion.versionName} (code: $currentVersionCode)")
+            Timber.d("No new version: $latestVersionCode <= $currentVersionCode")
         }
-        
+
         return isNewer
     }
 }

@@ -34,7 +34,7 @@ class GitHubApiClient {
     }
 }
 
-private fun GitHubRelease.toReleaseInfo(): ReleaseInfo? {
+internal fun GitHubRelease.toReleaseInfo(): ReleaseInfo? {
     val apkAsset = assets.find { it.name.endsWith(".apk") }
     if (apkAsset == null) {
         Timber.w("No APK asset found in release")
@@ -57,7 +57,7 @@ private fun GitHubRelease.toReleaseInfo(): ReleaseInfo? {
     )
 }
 
-private fun extractVersionCode(versionName: String): Int {
+internal fun extractVersionCode(versionName: String): Int {
     // Parse semantic version and convert to versionCode
     // Format: major * 10000 + minor * 100 + patch
     val parts = versionName.split(".")

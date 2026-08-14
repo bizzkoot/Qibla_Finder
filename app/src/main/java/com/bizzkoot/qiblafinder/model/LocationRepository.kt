@@ -92,10 +92,16 @@ class LocationRepository(private val context: Context) {
     private val _locationState = MutableStateFlow<LocationState>(LocationState.Loading)
     val locationState: Flow<LocationState> = _locationState.asStateFlow()
     
+    // Audit hardening: locationCallback and fixTimeoutJob are written on the main thread
+    // but read by the fix-timeout coroutine (Dispatchers.Default) after delay(), with no
+    // happens-before edge. @Volatile guarantees cross-thread visibility so a stale read
+    // can never let an old session's timeout fire against a newer acquisition.
+    @Volatile
     private var locationCallback: LocationCallback? = null
 
     // PRD M14: the armed fix-timeout job for the current acquisition session. Cancelled
     // on a fix, on stopLocationUpdates(), or when manual mode is entered.
+    @Volatile
     private var fixTimeoutJob: Job? = null
 
     // Tracks how many collectors are subscribed to the shared location flow so the
@@ -176,15 +182,26 @@ class LocationRepository(private val context: Context) {
                 ContextCompat.getMainExecutor(context),
                 locationCallback!!
             )
-            // Fresh acquisition: surface the acquiring state so the UI no longer shows a
-            // stale error, and arm the fix timeout (PRD M14).
-            _locationState.value = LocationState.Loading
+            // Fresh acquisition: surface the acquiring state ONLY when the previous state
+            // was an error (so Retry shows "acquiring" again) — otherwise keep the
+            // last-known-good fix instead of clobbering it on every re-registration
+            // (foreground, return to compass, revert-to-GPS).
+            if (_locationState.value is LocationState.Error ||
+                _locationState.value is LocationState.PermissionDenied
+            ) {
+                _locationState.value = LocationState.Loading
+            }
             armFixTimeout(locationCallback!!)
         } catch (e: SecurityException) {
             // Clear the callback so a later retry can re-attempt registration; leaving it
             // set would poison every future acquisition (the dedupe guard early-returns).
             locationCallback = null
             _locationState.value = LocationState.Error("Location permission denied")
+        } catch (e: Exception) {
+            // Same recovery for any other synchronous registration failure (e.g. location
+            // services disconnected): clear the callback so retry is not a placebo.
+            locationCallback = null
+            _locationState.value = LocationState.Error("Failed to start location updates")
         }
     }
 

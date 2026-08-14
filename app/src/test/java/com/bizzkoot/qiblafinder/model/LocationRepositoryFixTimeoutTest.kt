@@ -213,6 +213,79 @@ class LocationRepositoryFixTimeoutTest {
         verifyRequestLocationUpdates(2)
     }
 
+    @Test
+    fun `re-registration while the last state is Available keeps the last fix`() {
+        val callback = startAcquisition()
+        callback.onLocationResult(
+            LocationResult.create(
+                listOf(
+                    Location("gps").apply {
+                        latitude = 24.467
+                        longitude = 39.611
+                        accuracy = 5f
+                    }
+                )
+            )
+        )
+        assertTrue(state.value is LocationState.Available)
+
+        // Release the radio, then re-acquire: the last-known-good fix must survive the
+        // re-registration (no Loading flash on foreground / return-to-compass).
+        repository.stopLocationUpdates()
+        repository.getLocation()
+        verifyRequestLocationUpdates(2)
+
+        assertTrue(
+            "re-registration must not clobber an Available fix with Loading, got ${state.value}",
+            state.value is LocationState.Available
+        )
+    }
+
+    @Test
+    fun `re-registration after a failed registration emits Loading`() {
+        // First registration fails (SecurityException); the retry then succeeds. The mock
+        // returns Task<Void>, so the success leg is a doReturn(null) after the doThrow.
+        doThrow(SecurityException("permission revoked"))
+            .doReturn(null)
+            .`when`(fusedLocationClient)
+            .requestLocationUpdates(
+                any(LocationRequest::class.java),
+                any(Executor::class.java),
+                any(LocationCallback::class.java)
+            )
+
+        repository.getLocation()
+        assertTrue(state.value is LocationState.Error)
+
+        // The retry re-registers successfully; because the previous state was an Error,
+        // the fresh acquisition surfaces Loading (Retry shows "acquiring" again).
+        repository.getLocation()
+        verifyRequestLocationUpdates(2)
+        assertEquals(LocationState.Loading, state.value)
+    }
+
+    @Test
+    fun `non-security registration failure clears the callback for a later retry`() {
+        doThrow(RuntimeException("location service unavailable")).`when`(fusedLocationClient)
+            .requestLocationUpdates(
+                any(LocationRequest::class.java),
+                any(Executor::class.java),
+                any(LocationCallback::class.java)
+            )
+
+        repository.getLocation()
+        val current = state.value
+        assertTrue("expected Error, got $current", current is LocationState.Error)
+        assertEquals(
+            "Failed to start location updates",
+            (current as LocationState.Error).message
+        )
+
+        // The dedupe guard must not block a later re-attempt: the callback was cleared.
+        repository.getLocation()
+        verifyRequestLocationUpdates(2)
+    }
+
     private companion object {
         const val FIX_TIMEOUT_MS = 50L
     }

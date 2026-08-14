@@ -32,6 +32,20 @@ class VersionCheckerTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    /**
+     * The installed app's version as reported by the (Robolectric) PackageManager — the
+     * exact source [VersionChecker.getCurrentVersion] reads. Derived at runtime instead of
+     * hardcoding so these tests stay green under the release workflow (release-drafter.yml),
+     * which bumps versionName/versionCode in app/build.gradle BEFORE running ./gradlew test.
+     */
+    @Suppress("DEPRECATION")
+    private val installedVersionName: String =
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+
+    @Suppress("DEPRECATION")
+    private val installedVersionCode: Int =
+        context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+
     private fun releaseInfo(
         versionName: String = "2.10.4",
         versionCode: Int = 21004
@@ -49,13 +63,13 @@ class VersionCheckerTest {
     @Test
     fun `newer release returns UpdateInfo with mapped fields`() = runBlocking {
         val client = mock(GitHubApiClient::class.java)
-        `when`(client.getLatestRelease()).thenReturn(releaseInfo())
+        `when`(client.getLatestRelease()).thenReturn(releaseInfo(versionCode = installedVersionCode + 1))
 
         val updateInfo = checker(client).checkForUpdates()
 
         assertNotNull(updateInfo)
         updateInfo!!
-        assertEquals("2.10.3", updateInfo.currentVersion)
+        assertEquals(installedVersionName, updateInfo.currentVersion)
         assertEquals("2.10.4", updateInfo.newVersion)
         assertEquals(
             "https://github.com/bizzkoot/Qibla_Finder/releases/download/v2.10.4/app-release.apk",
@@ -68,7 +82,7 @@ class VersionCheckerTest {
     @Test
     fun `equal version returns null`() = runBlocking {
         val client = mock(GitHubApiClient::class.java)
-        `when`(client.getLatestRelease()).thenReturn(releaseInfo(versionCode = 21003))
+        `when`(client.getLatestRelease()).thenReturn(releaseInfo(versionCode = installedVersionCode))
 
         assertNull(checker(client).checkForUpdates())
     }
@@ -76,7 +90,7 @@ class VersionCheckerTest {
     @Test
     fun `older version returns null`() = runBlocking {
         val client = mock(GitHubApiClient::class.java)
-        `when`(client.getLatestRelease()).thenReturn(releaseInfo(versionCode = 20900))
+        `when`(client.getLatestRelease()).thenReturn(releaseInfo(versionCode = installedVersionCode - 1))
 
         assertNull(checker(client).checkForUpdates())
     }

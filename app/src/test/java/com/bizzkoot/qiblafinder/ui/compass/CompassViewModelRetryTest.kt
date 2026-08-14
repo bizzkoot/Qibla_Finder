@@ -155,6 +155,39 @@ class CompassViewModelRetryTest {
         viewModel.viewModelScope.cancel()
     }
 
+    @Test
+    fun `retryLocation stops the stale GPS session before re-requesting`() = runBlocking {
+        var getLocationCalls = 0
+        val sensorRepository = mock(SensorRepository::class.java)
+        `when`(sensorRepository.orientationState)
+            .thenReturn(MutableStateFlow(OrientationState.Initializing))
+        `when`(sensorRepository.getOrientationFlow()).thenReturn(flowOf(availableOrientation()))
+
+        val locationRepository = mock(LocationRepository::class.java)
+        `when`(locationRepository.getLocation()).thenAnswer {
+            getLocationCalls++
+            flowOf(LocationState.Error("GPS fix timed out"))
+        }
+        `when`(locationRepository.isManualLocation).thenReturn(MutableStateFlow(false))
+
+        val viewModel = CompassViewModel(locationRepository, sensorRepository, calibrationRepository)
+        waitUntil("location error surfaced") {
+            viewModel.uiState.value.locationState is LocationState.Error
+        }
+        assertEquals(1, getLocationCalls)
+
+        viewModel.retryLocation()
+
+        // PRD M14: the stale GPS session must be torn down BEFORE the flow is
+        // re-requested, otherwise the shared callback stays alive (concurrent GPS
+        // streams) and Retry is a placebo that never restarts acquisition.
+        verify(locationRepository, times(1)).stopLocationUpdates()
+        waitUntil("getLocation re-requested after retry") { getLocationCalls >= 2 }
+        assertTrue(viewModel.uiState.value.locationState is LocationState.Error)
+
+        viewModel.viewModelScope.cancel()
+    }
+
     private suspend fun waitUntil(
         message: String,
         timeoutMs: Long = 2_000,

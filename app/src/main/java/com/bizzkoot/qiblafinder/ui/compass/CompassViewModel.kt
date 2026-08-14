@@ -229,10 +229,16 @@ class CompassViewModel(
     }
 
     /**
-     * PRD M8: re-request the location after a LocationState.Error. Re-collecting
-     * getLocation() re-runs startLocationUpdates() (register-on-call semantics).
+     * PRD M8/M14: re-request the location after a LocationState.Error. The stale GPS
+     * session is stopped FIRST — with several concurrent GPS streams (compass combine,
+     * AR combine, declination collectors) the shared callback stays alive, so merely
+     * re-collecting getLocation() would early-return in startLocationUpdates() (a
+     * placebo). Stopping removes the callback and cancels the fix timeout; the
+     * re-collected flow then registers a fresh callback with a fresh timeout and emits
+     * LocationState.Loading.
      */
     fun retryLocation() {
+        locationRepository.stopLocationUpdates()
         locationRetryKey.value++
     }
 

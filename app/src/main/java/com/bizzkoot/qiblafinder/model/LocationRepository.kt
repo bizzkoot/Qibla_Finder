@@ -11,8 +11,14 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +48,16 @@ enum class LocationAccuracy {
 
 class LocationRepository(private val context: Context) {
 
+    // PRD M14: GPS fix timeout. When a fresh acquisition registers the GPS callback, a
+    // timeout is armed; if no LocationState.Available fix arrives within the window the
+    // radio is stopped and a LocationState.Error is emitted so the UI can offer Retry
+    // instead of acquiring forever (which kept the GPS radio on indefinitely).
+    private var fixTimeoutMs: Long = DEFAULT_FIX_TIMEOUT_MS
+
+    // Repo-owned scope for the fix-timeout job. Defaults to a non-main dispatcher so the
+    // timeout never blocks the UI; tests inject a TestScope for deterministic timing.
+    private var scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     // Test seam: when set, overrides the lazily-created default client so tests can
     // inject a fake/mock FusedLocationProviderClient. The primary path never sets it.
     private var fusedLocationClientOverride: FusedLocationProviderClient? = null
@@ -59,11 +75,28 @@ class LocationRepository(private val context: Context) {
     ) : this(context) {
         fusedLocationClientOverride = fusedLocationClient
     }
+
+    // Test seam (PRD M14): injects the coroutine scope + timeout duration for
+    // deterministic fix-timeout tests. The primary path uses the defaults above.
+    internal constructor(
+        context: Context,
+        fusedLocationClient: FusedLocationProviderClient,
+        scope: CoroutineScope,
+        fixTimeoutMs: Long = DEFAULT_FIX_TIMEOUT_MS
+    ) : this(context) {
+        fusedLocationClientOverride = fusedLocationClient
+        this.scope = scope
+        this.fixTimeoutMs = fixTimeoutMs
+    }
     
     private val _locationState = MutableStateFlow<LocationState>(LocationState.Loading)
     val locationState: Flow<LocationState> = _locationState.asStateFlow()
     
     private var locationCallback: LocationCallback? = null
+
+    // PRD M14: the armed fix-timeout job for the current acquisition session. Cancelled
+    // on a fix, on stopLocationUpdates(), or when manual mode is entered.
+    private var fixTimeoutJob: Job? = null
 
     // Tracks how many collectors are subscribed to the shared location flow so the
     // GPS callback is released when the LAST collector ends (covered screens / app
@@ -117,6 +150,9 @@ class LocationRepository(private val context: Context) {
                 if (isManualLocation.value) return // Don't update if in manual mode
 
                 locationResult.lastLocation?.let { location ->
+                    // A fix arrived — the acquisition succeeded, so the fix timeout is
+                    // no longer relevant (PRD M14).
+                    cancelFixTimeout()
                     val accuracyLevel = when {
                         location.accuracy <= 10 -> LocationAccuracy.HIGH_ACCURACY
                         location.accuracy <= 100 -> LocationAccuracy.MEDIUM_ACCURACY
@@ -140,9 +176,41 @@ class LocationRepository(private val context: Context) {
                 ContextCompat.getMainExecutor(context),
                 locationCallback!!
             )
+            // Fresh acquisition: surface the acquiring state so the UI no longer shows a
+            // stale error, and arm the fix timeout (PRD M14).
+            _locationState.value = LocationState.Loading
+            armFixTimeout(locationCallback!!)
         } catch (e: SecurityException) {
+            // Clear the callback so a later retry can re-attempt registration; leaving it
+            // set would poison every future acquisition (the dedupe guard early-returns).
+            locationCallback = null
             _locationState.value = LocationState.Error("Location permission denied")
         }
+    }
+
+    /**
+     * Arms the PRD M14 fix timeout for the given acquisition session. The timeout is
+     * cancelled when a fix arrives, when [stopLocationUpdates] runs, or when manual mode
+     * is entered (setManualLocation -> stopLocationUpdates). The identity check ensures a
+     * stale timeout can never kill a newer acquisition session.
+     */
+    private fun armFixTimeout(callback: LocationCallback) {
+        cancelFixTimeout()
+        fixTimeoutJob = scope.launch {
+            delay(fixTimeoutMs)
+            // Only fire if this exact acquisition session is still live.
+            if (locationCallback === callback) {
+                Timber.w("GPS fix timed out after ${fixTimeoutMs}ms - stopping updates")
+                _locationState.value =
+                    LocationState.Error("GPS fix timed out. Check GPS signal and retry.")
+                stopLocationUpdates()
+            }
+        }
+    }
+
+    private fun cancelFixTimeout() {
+        fixTimeoutJob?.cancel()
+        fixTimeoutJob = null
     }
 
     fun getLocation(): Flow<LocationState> {
@@ -172,9 +240,14 @@ class LocationRepository(private val context: Context) {
     }
     
     fun stopLocationUpdates() {
+        cancelFixTimeout()
         locationCallback?.let { callback ->
             fusedLocationClient.removeLocationUpdates(callback)
             locationCallback = null
         }
+    }
+
+    private companion object {
+        const val DEFAULT_FIX_TIMEOUT_MS = 45_000L
     }
 }
